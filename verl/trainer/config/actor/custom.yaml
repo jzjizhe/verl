@@ -1,0 +1,6 @@
+use_infonce_loss: False
+use_golden_loss: False
+get_hidden_state: False
+layer_list: []
+add_mlp:
+mlp_intermidiate_size:
