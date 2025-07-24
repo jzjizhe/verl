@@ -127,5 +127,5 @@ outputs
 .history
 
 # custom
-verl/examples/grpo_trainer/
+examples/grpo_trainer/
 
