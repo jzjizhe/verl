@@ -8,6 +8,7 @@
 **/*.tar.gz
 **/playground
 **/wandb
+**/swanlog
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -124,3 +125,7 @@ logs
 log
 outputs
 .history
+
+# custom
+verl/examples/grpo_trainer/
+
