@@ -2,7 +2,7 @@ import random
 import numpy as np
 import torch
 import os
-
+from verl.utils.custom_print import  format_print 
 def seed_everything(seed: int = 42, deterministic: bool = False) -> None:
     """
     设置所有随机数生成器的种子以确保实验可重复
@@ -34,4 +34,5 @@ def seed_everything(seed: int = 42, deterministic: bool = False) -> None:
         # 保持性能优化但牺牲完全确定性
         torch.backends.cudnn.benchmark = True
 
-    print(f"Set seed to {seed} with deterministic={deterministic}")
+    msg=f"Set seed to {seed} with deterministic={deterministic}"
+    format_print(msg)
