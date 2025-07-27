@@ -35,7 +35,7 @@ from verl.utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_b
 from verl.utils.torch_functional import logprobs_from_logits
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad, ulysses_pad_and_slice_inputs
 from verl.utils.regular_loss import compute_infonce_loss,compute_golden_loss
-from verl.utils.dist_print import rank_zero_print
+from verl.utils.custom_print import rank_zero_print
 from verl.workers.actor import BasePPOActor
 if is_cuda_available:
     from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
@@ -82,6 +82,7 @@ class DataParallelPPOActor(BasePPOActor):
         self.infonce_temperature = self.config.get("infonce_temperature", 0.1)
         # golden hidden regular
         self.use_golden_loss=self.config.get("use_golden_loss",False)
+        self.golden_loss_weight=self.config.get("golden_loss_weight",0.001)
         self.layer_list = self.config.get("layer_list", None)  # 新增layer_list参数
         # add mlp
         self.add_mlp=self.config.get("add_mlp",False)
@@ -746,9 +747,9 @@ class DataParallelPPOActor(BasePPOActor):
                             model_inputs["attention_mask"],
                             model_inputs["golden_answer_attention_mask"]
                         )
-                        policy_loss = policy_loss + hidden_golden_loss * 0.1
+                        policy_loss = policy_loss + hidden_golden_loss * self.golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()
-                        metrics["actor/hidden_golden_weight"] = 0.1
+                        metrics["actor/hidden_golden_weight"] = self.golden_loss_weight
                     if self.config.use_kl_loss:
                         ref_log_prob = model_inputs["ref_log_prob"]
                         # compute kl loss

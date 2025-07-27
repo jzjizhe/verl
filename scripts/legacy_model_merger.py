@@ -200,7 +200,6 @@ class BaseModelMerger(ABC):
         lora_path = self.save_lora_adapter(state_dict)
         if lora_path:
             print(f"Saving lora adapter to {lora_path}")
-
         print(f"Saving model to {self.config.target_dir}")
         model.save_pretrained(self.config.target_dir, state_dict=state_dict)
         del state_dict
@@ -366,7 +365,6 @@ class FSDPModelMerger(BaseModelMerger):
         print(f"Processing model shards with {total_shards} {mesh_shape} in total")
 
         merged_state_dict = self._load_and_merge_state_dicts(world_size, total_shards, mesh_shape, mesh_dim_names)
-
         if self.config.operation == "test":
             if not self.config.test_hf_dir:
                 raise ValueError("test_hf_dir must be provided for test operation")
@@ -743,7 +741,7 @@ def main():
         "is_value_model": args.is_value_model,
         "local_dir": args.local_dir,
         "hf_model_path": args.hf_model_path,
-        "hf_model_config_path": args.local_dir,
+        "hf_model_config_path": os.path.join(args.local_dir,"huggingface"),
     }
 
     if args.operation == "merge":
