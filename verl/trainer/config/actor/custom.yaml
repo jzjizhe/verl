@@ -1,5 +1,6 @@
 use_infonce_loss: False
 use_golden_loss: False
+golden_loss_weight: 0.001
 get_hidden_state: False
 layer_list: []
 add_mlp:

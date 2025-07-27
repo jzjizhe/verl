@@ -1,4 +1,3 @@
-from termcolor import colored
 import os
 
 def is_rank_zero():
