@@ -740,12 +740,16 @@ class DataParallelPPOActor(BasePPOActor):
                             )
                         if self.add_mlp:
                             hidden_states_ls[0]=self.actor_module.custom_mlp(hidden_states_ls[0])
+                        if self.config.get("mlp_golden",False):
+                            with torch.no_grad():
+                                golden_hidden_ls[0]=self.actor_module.custom_mlp(golden_hidden_ls[0])
                         # === hidden states cosine similarity regularization ===
                         hidden_golden_loss = compute_golden_loss(
                             hidden_states_ls,
                             golden_hidden_ls,
                             model_inputs["attention_mask"],
-                            model_inputs["golden_answer_attention_mask"]
+                            model_inputs["golden_answer_attention_mask"],
+                            normalize=self.config.get("normalize_golden_loss",False)
                         )
                         policy_loss = policy_loss + hidden_golden_loss * self.golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()

@@ -7,7 +7,7 @@ def process_hidden(hidden_states_ls):
     return hidden_states_ls[0]
 
 def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask, 
-                       use_multilayer=True, alignment_strategy='attention', temperature=0.1):
+                       use_multilayer=False, alignment_strategy='attention', temperature=0.1,normalize=False):
     """
     改进的golden loss计算函数
     
@@ -38,11 +38,11 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         # 只使用第一层
         return compute_single_layer_loss(
             hidden_states_ls[0], golden_hidden_ls[0], hidden_mask, golden_mask,
-            alignment_strategy, temperature
+            alignment_strategy, temperature,normalize
         )
 
 def compute_single_layer_loss(hidden_states, golden_hidden, hidden_mask, golden_mask,
-                            alignment_strategy='attention', temperature=0.1):
+                            alignment_strategy='attention', temperature=0.1,normalize=False):
     """
     单层hidden states的loss计算
     """
@@ -60,7 +60,7 @@ def compute_single_layer_loss(hidden_states, golden_hidden, hidden_mask, golden_
     elif alignment_strategy == 'min_length':
         return min_length_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_mask)
     else:
-        return original_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_mask)
+        return original_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_mask,normalize=normalize)
 
 def attention_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_mask, temperature=0.1):
     """
@@ -149,9 +149,9 @@ def min_length_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_
     
     return total_loss / bsz if bsz > 0 else torch.tensor(0.0, device=hidden_states.device)
 
-def original_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_mask):
+def original_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_mask,normalize=False):
     """
-    原始的loss计算方法（保持兼容性）
+    原始的loss计算方法（保持兼容性），加入归一化
     """
     hidden_length = hidden_states.size(1)
     golden_length = golden_hidden.size(1)
@@ -168,6 +168,11 @@ def original_alignment_loss(hidden_states, golden_hidden, hidden_mask, golden_ma
     
     if h1_valid.size(0) == 0:
         return torch.tensor(0.0, device=hidden_states.device)
+    
+    if normalize:
+        # 加入归一化
+        h1_valid = F.normalize(h1_valid, dim=-1)
+        h2_valid = F.normalize(h2_valid, dim=-1)
     
     cos_sim = F.cosine_similarity(h1_valid, h2_valid, dim=-1)
     hidden_golden_loss = 1 - cos_sim.mean()

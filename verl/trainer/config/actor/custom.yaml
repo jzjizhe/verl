@@ -5,3 +5,5 @@ get_hidden_state: False
 layer_list: []
 add_mlp:
 mlp_intermidiate_size:
+normalize_golden_loss: False
+mlp_golden: False
