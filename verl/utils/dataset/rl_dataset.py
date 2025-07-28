@@ -228,7 +228,7 @@ class RLHFDataset(Dataset):
                 max_length=self.max_prompt_length,
                 pad_token_id=self.tokenizer.pad_token_id,
                 left_pad=False,
-                truncation=self.truncation,
+                truncation='right',
             )
             # 3. 生成 position_ids，和 input_ids/attention_mask 方式一致
             golden_answer_position_ids = compute_position_id_with_mask(golden_answer_attention_mask)

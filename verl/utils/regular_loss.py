@@ -18,9 +18,9 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     valid_mask = hidden_mask.bool() & golden_mask.bool()  # 只对都有效的位置
     h1_valid = h1[valid_mask]
     h2_valid = h2[valid_mask]
-    if h1_valid.size(0) == 0:
-        print("h1_valid is empty")
-        import pdb;pdb.set_trace()
+    # if h1_valid.size(0) == 0:
+    #     print("h1_valid is empty")
+    #     import pdb;pdb.set_trace()
     if normalize:
         h1_valid = F.normalize(h1_valid, dim=-1)
         h2_valid = F.normalize(h2_valid, dim=-1)
