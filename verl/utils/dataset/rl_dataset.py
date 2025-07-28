@@ -221,14 +221,14 @@ class RLHFDataset(Dataset):
             golden_answer_model_inputs = self.tokenizer(raw_golden_answer, return_tensors="pt", add_special_tokens=False)
             golden_answer_input_ids = golden_answer_model_inputs.pop("input_ids")
             golden_answer_attention_mask = golden_answer_model_inputs.pop("attention_mask")
-            # 2. pad/truncation 处理，和 input_ids/attention_mask 完全一致
+            # 2. pad/truncation 处理，和 input_ids/attention_mask 一致,但pad是right pad,因为generated answer是right pad 要和其保持一致
             golden_answer_input_ids, golden_answer_attention_mask = verl_F.postprocess_data(
                 input_ids=golden_answer_input_ids,
                 attention_mask=golden_answer_attention_mask,
                 max_length=self.max_prompt_length,
                 pad_token_id=self.tokenizer.pad_token_id,
-                left_pad=True,
-                truncation='left',
+                left_pad=False,
+                truncation=self.truncation,
             )
             # 3. 生成 position_ids，和 input_ids/attention_mask 方式一致
             golden_answer_position_ids = compute_position_id_with_mask(golden_answer_attention_mask)

@@ -19,7 +19,8 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     h1_valid = h1[valid_mask]
     h2_valid = h2[valid_mask]
     if h1_valid.size(0) == 0:
-        return torch.tensor(0.0, device=h1_valid.device)
+        print("h1_valid is empty")
+        import pdb;pdb.set_trace()
     if normalize:
         h1_valid = F.normalize(h1_valid, dim=-1)
         h2_valid = F.normalize(h2_valid, dim=-1)
