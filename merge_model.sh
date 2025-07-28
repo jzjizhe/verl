@@ -1,5 +1,5 @@
 #!/bin/bash
-root=/data1/jzzhang/verl_results/Qwen2.5-3B
+root=/data1/hhzhang/improve/Qwen2.5-3B/qwen3b_ep10_num12_math_baseline/model
 # 递归查找所有包含 checkpoints/global_step_*/actor 的目录
 find $root -type d -path */model/global_step_*/actor | while read path; do
     if [ -f ${path}/model_world_size_*_rank_0.pt ]; then
