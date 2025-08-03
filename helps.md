@@ -2,3 +2,4 @@
 /data0/jzzhang/verl/verl/utils/dataset/rl_dataset.py
 /data0/jzzhang/verl/verl/workers/fsdp_workers.py
 /data0/jzzhang/verl/verl/workers/actor/dp_actor.py
+/data0/jzzhang/verl/verl/trainer/ppo/ray_trainer.py

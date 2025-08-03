@@ -37,6 +37,7 @@ from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad, ulysses_pa
 from verl.utils.regular_loss import compute_infonce_loss,compute_golden_loss
 from verl.utils.custom_print import rank_zero_print
 from verl.workers.actor import BasePPOActor
+import math
 if is_cuda_available:
     from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
 elif is_npu_available:
@@ -623,13 +624,30 @@ class DataParallelPPOActor(BasePPOActor):
 
         return log_probs, entropys
 
+    def golden_loss_weight_schedule(self,step,loss_weight,total_steps,scheduler_type="cosine"):
+        step-=1 # 0-indexed
+        if scheduler_type=="cosine":
+            eta_min = 0
+            return eta_min + (loss_weight - eta_min) * (1 + math.cos(math.pi * step / total_steps)) / 2
+        elif scheduler_type=="linear":
+            return loss_weight * (1 - step / total_steps)
+        elif scheduler_type=="constant":
+            return loss_weight
+        elif scheduler_type=="stage":
+            if step < 10:
+                return 0.005
+            elif step < 30:
+                return 0.001
+            else:
+                return 0
+        else:
+            raise ValueError(f"Invalid scheduler type: {scheduler_type}")
     @GPUMemoryLogger(role="dp actor", logger=logger)
     def update_policy(self, data: DataProto):
         # make sure we are in training mode
         self.actor_module.train()
 
         temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
-
         select_keys = [
             "responses",
             "response_mask",
@@ -642,7 +660,10 @@ class DataParallelPPOActor(BasePPOActor):
         if self.config.use_kl_loss:
             select_keys.append("ref_log_prob")
         if self.use_golden_loss:
+            step = data.meta_info["step"]
+            total_steps = data.meta_info["total_steps"]
             select_keys+=['golden_answer_ids','golden_answer_position_ids','golden_answer_attention_mask']
+            golden_loss_weight = self.golden_loss_weight_schedule(step,self.golden_loss_weight,total_steps,scheduler_type=self.config.get("golden_loss_scheduler_type","constant"))
 
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
@@ -751,9 +772,9 @@ class DataParallelPPOActor(BasePPOActor):
                             model_inputs["golden_answer_attention_mask"],
                             normalize=self.config.get("normalize_golden_loss",False)
                         )
-                        policy_loss = policy_loss + hidden_golden_loss * self.golden_loss_weight
+                        policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()
-                        metrics["actor/hidden_golden_weight"] = self.golden_loss_weight
+                        metrics["actor/hidden_golden_weight"] = golden_loss_weight
                     if self.config.use_kl_loss:
                         ref_log_prob = model_inputs["ref_log_prob"]
                         # compute kl loss

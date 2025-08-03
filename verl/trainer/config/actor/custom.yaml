@@ -7,3 +7,4 @@ add_mlp:
 mlp_intermidiate_size:
 normalize_golden_loss: False
 mlp_golden: False
+golden_loss_scheduler_type: constant
