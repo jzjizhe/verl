@@ -4,7 +4,7 @@
 # 使用方法: ./delete_optim_files.sh [目录路径]
 
 # 检查是否提供了目录参数，默认为当前目录
-TARGET_DIR="${1:-/data1/hhzhang/improve/Qwen2.5-3B/qwen3b_ep10_num12_math_baseline/model}"
+TARGET_DIR="${1:-/data1/jzzhang/verl_results/Qwen2.5-1.5B}"
 
 # 检查目录是否存在
 if [ ! -d "$TARGET_DIR" ]; then
