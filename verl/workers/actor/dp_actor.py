@@ -656,6 +656,7 @@ class DataParallelPPOActor(BasePPOActor):
             "position_ids",
             "old_log_probs",
             "advantages",
+            "token_level_scores"
         ]
         if self.config.use_kl_loss:
             select_keys.append("ref_log_prob")
@@ -770,6 +771,7 @@ class DataParallelPPOActor(BasePPOActor):
                             golden_hidden_ls,
                             model_inputs["attention_mask"],
                             model_inputs["golden_answer_attention_mask"],
+                            model_inputs["token_level_scores"],
                             normalize=self.config.get("normalize_golden_loss",False)
                         )
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
