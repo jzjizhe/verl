@@ -7,27 +7,33 @@ def process_hidden(hidden_states_ls):
     return hidden_states_ls[0]
 
 def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,align_type,normalize=False):
-    scores=token_level_scores.sum(dim=1)
-    flip_scores=1-scores.unsqueeze(1)
-    hidden_length = hidden_states_ls[0].size(1)
-    golden_length = golden_hidden_ls[0].size(1)
-    hidden_mask=hidden_mask[:,-hidden_length:]
-    golden_mask=golden_mask[:,-golden_length:]
+    # scores=token_level_scores.sum(dim=1)
+    # flip_scores=1-scores.unsqueeze(1)
+    # hidden_length = hidden_states_ls[0].size(1)
+    # golden_length = golden_hidden_ls[0].size(1)
+    # hidden_mask=hidden_mask[:,-hidden_length:]
+    # golden_mask=golden_mask[:,-golden_length:]
     h1 = process_hidden(hidden_states_ls)  # (bsz, seq_len, hidden_size)
     h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
-    # mask: (bsz, seq_len)
-    # 好像不用做mask
-    # valid_mask = hidden_mask.bool() & golden_mask.bool()  # 只对都有效的位置
-    # h1_valid = h1[valid_mask]
-    # h2_valid = h2[valid_mask]
-    # if h1_valid.size(0) == 0:
-    #     print("h1_valid is empty")
-    #     import pdb;pdb.set_trace()
+    if align_type=="last_token":
+        last_token_indices=hidden_mask.sum(dim=1)-1
+        batch_indices = torch.arange(h1.size(0), device=h1.device)
+        h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
+        last_golden_indices=golden_mask.sum(dim=1)-1
+        golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
+        h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size) 
+    elif align_type=="all2last":
+        last_golden_indices = golden_mask.sum(dim=1) - 1
+        golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
+        h2 = h2[golden_batch_indices, last_golden_indices].unsqueeze(1)  # (bsz, 1, hidden_size)
+    else:
+        raise ValueError(f"Invalid alignment type: {align_type}")
     if normalize:
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
-    # import pdb;pdb.set_trace()
-    cos_sim = F.cosine_similarity(h1, h2, dim=-1)*flip_scores
+    import pdb;pdb.set_trace()
+    cos_sim = F.cosine_similarity(h1, h2, dim=-1)
+    # cos_sim = F.cosine_similarity(h1, h2, dim=-1)*flip_scores
     hidden_golden_loss = 1 - cos_sim.mean()
     return hidden_golden_loss
 

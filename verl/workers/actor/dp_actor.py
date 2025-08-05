@@ -266,7 +266,7 @@ class DataParallelPPOActor(BasePPOActor):
                     entropy = full_entropy.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
-                    hidden_states_ls=[item[:,-response_length-1:-1,:] for item in hidden_states_ls]
+                    hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
                     # for hidden_states in full_hidden_states_ls:
                         # hidden_states_ls.append(hidden_states[:,-response_length-1:-1,:])
                 # if output_hidden_states and hidden_states is not None:
@@ -313,7 +313,7 @@ class DataParallelPPOActor(BasePPOActor):
                         # if isinstance(output.hidden_states, (list, tuple)):
                             # 如果hidden_states是列表，直接索引
                         for target_layer in layer_list:
-                            hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length - 1 : -1, :])  # (bsz, response_length, hidden_size)
+                            hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
 
             return entropy, log_probs, hidden_states_ls
 
@@ -503,8 +503,9 @@ class DataParallelPPOActor(BasePPOActor):
                     entropy = full_entropy.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
-                    hidden_states_ls=[item[:,-response_length-1:-1,:] for item in hidden_states_ls]
-
+                    # 获取的是response 的hiden state,而不是预测next token的状态
+                    hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
+                    # hidden_states_ls=[item[:,-response_length-1:-1,:] for item in hidden_states_ls]
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
                 if self.use_fused_kernels:
@@ -542,7 +543,7 @@ class DataParallelPPOActor(BasePPOActor):
                 if output_hidden_states and hasattr(output, 'hidden_states'):
                     if layer_list is not None and len(layer_list) > 0:
                         for target_layer in layer_list:
-                            hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length - 1 : -1, :])  # (bsz, response_length, hidden_size)
+                            hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
             return entropy, log_probs, hidden_states_ls
 
     def _optimizer_step(self):
@@ -769,9 +770,10 @@ class DataParallelPPOActor(BasePPOActor):
                         hidden_golden_loss = compute_golden_loss(
                             hidden_states_ls,
                             golden_hidden_ls,
-                            model_inputs["attention_mask"],
+                            response_mask,
                             model_inputs["golden_answer_attention_mask"],
                             model_inputs["token_level_scores"],
+                            align_type=self.config.get("align_type","last_token"),
                             normalize=self.config.get("normalize_golden_loss",False)
                         )
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
