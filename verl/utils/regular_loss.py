@@ -31,7 +31,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     if normalize:
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
-    import pdb;pdb.set_trace()
     cos_sim = F.cosine_similarity(h1, h2, dim=-1)
     # cos_sim = F.cosine_similarity(h1, h2, dim=-1)*flip_scores
     hidden_golden_loss = 1 - cos_sim.mean()
