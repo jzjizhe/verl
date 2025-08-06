@@ -774,7 +774,8 @@ class DataParallelPPOActor(BasePPOActor):
                             model_inputs["golden_answer_attention_mask"],
                             model_inputs["token_level_scores"],
                             align_type=self.config.get("align_type","last_token"),
-                            normalize=self.config.get("normalize_golden_loss",False)
+                            loss_type=self.config.get("loss_type","cosine"),
+                            normalize=self.config.get("norm_embeddings",False)
                         )
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()

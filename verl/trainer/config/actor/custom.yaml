@@ -5,7 +5,8 @@ get_hidden_state: False
 layer_list: []
 add_mlp:
 mlp_intermidiate_size:
-normalize_golden_loss: False
+norm_embeddings: False
 mlp_golden: False
 golden_loss_scheduler_type: constant
 align_type: last_token
+loss_type: cosine

@@ -6,7 +6,7 @@ import math
 def process_hidden(hidden_states_ls):
     return hidden_states_ls[0]
 
-def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,align_type,normalize=False):
+def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,align_type,loss_type,normalize=False):
     # scores=token_level_scores.sum(dim=1)
     # flip_scores=1-scores.unsqueeze(1)
     # hidden_length = hidden_states_ls[0].size(1)
@@ -29,12 +29,21 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     else:
         raise ValueError(f"Invalid alignment type: {align_type}")
     if normalize:
-        h1 = F.normalize(h1,p=2, dim=-1)
-        h2 = F.normalize(h2,p=2, dim=-1)
-    cos_sim = F.cosine_similarity(h1, h2, dim=-1)
-    # cos_sim = F.cosine_similarity(h1, h2, dim=-1)*flip_scores
-    hidden_golden_loss = 1 - cos_sim.mean()
+        h1 = F.normalize(h1, dim=-1)
+        h2 = F.normalize(h2, dim=-1)
+    if loss_type=="cosine":
+        cos_sim = F.cosine_similarity(h1, h2, dim=-1)
+        hidden_golden_loss = 1 - cos_sim.mean()
+    elif loss_type=="contrastive":
+        temperature = 0.1
+        logits = torch.matmul(h1, h2.t())/temperature
+        labels = torch.arange(h1.size(0), device=h1.device)
+        hidden_golden_loss = F.cross_entropy(logits, labels)
+    else:
+        raise ValueError(f"Invalid loss type: {loss_type}")
     return hidden_golden_loss
+
+
 
 # def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask, 
 #                        use_multilayer=False, alignment_strategy='original', temperature=0.1,normalize=False):
