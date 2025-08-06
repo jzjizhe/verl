@@ -657,7 +657,7 @@ class DataParallelPPOActor(BasePPOActor):
             "position_ids",
             "old_log_probs",
             "advantages",
-            "token_level_scores"
+            "token_level_scores",
         ]
         if self.config.use_kl_loss:
             select_keys.append("ref_log_prob")
@@ -669,7 +669,7 @@ class DataParallelPPOActor(BasePPOActor):
 
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
-
+        non_tensor_select_keys.append("uid")
         data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
 
         # Split to make minibatch iterator for updating the actor
@@ -777,6 +777,7 @@ class DataParallelPPOActor(BasePPOActor):
                             align_type=self.config.get("align_type","last_token"),
                             loss_type=self.config.get("loss_type","cosine"),
                             normalize=self.config.get("norm_embeddings",False),
+                            uid=model_inputs["uid"],
                             config=self.config
                         )
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight

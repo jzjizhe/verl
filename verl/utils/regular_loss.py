@@ -2,17 +2,12 @@ from multiprocessing import process
 import torch
 import torch.nn.functional as F
 import math
+import pandas as pd
 
 def process_hidden(hidden_states_ls):
     return hidden_states_ls[0]
 
-def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,mlp,align_type,loss_type,normalize,config=None):
-    # scores=token_level_scores.sum(dim=1)
-    # flip_scores=1-scores.unsqueeze(1)
-    # hidden_length = hidden_states_ls[0].size(1)
-    # golden_length = golden_hidden_ls[0].size(1)
-    # hidden_mask=hidden_mask[:,-hidden_length:]
-    # golden_mask=golden_mask[:,-golden_length:]
+def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,mlp,align_type,loss_type,normalize,uid,config=None):
     h1 = process_hidden(hidden_states_ls)  # (bsz, seq_len, hidden_size)
     h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
     if align_type=="last_token":
@@ -37,9 +32,18 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         hidden_golden_loss = 1 - cos_sim.mean()
     elif loss_type=="contrastive":
+        # 去重
+        df = pd.DataFrame({"uid": uid, "original_idx": range(len(uid))})
+        unique_df = df.drop_duplicates("uid", keep="first").reset_index(drop=True)  # 重置索引为0,1,2,...
+        # 建立 {uid: 去重后索引} 的映射
+        uid_to_unique_idx = {uid: idx for idx, uid in enumerate(unique_df["uid"])}
+        # 生成labels（h1的每个样本对应h2_unique中的位置）
+        labels = [uid_to_unique_idx[u] for u in uid]
+        labels = torch.tensor(labels, device=h1.device)
+        h2 = h2[unique_df["original_idx"].values]  # 用原始索引提取数据
         temperature = 0.1
         logits = torch.matmul(h1, h2.t())/temperature
-        labels = torch.arange(h1.size(0), device=h1.device)
+        # labels = torch.arange(h1.size(0), device=h1.device)
         hidden_golden_loss = F.cross_entropy(logits, labels)
     else:
         raise ValueError(f"Invalid loss type: {loss_type}")
