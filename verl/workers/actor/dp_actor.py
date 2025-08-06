@@ -761,11 +761,11 @@ class DataParallelPPOActor(BasePPOActor):
                                 output_hidden_states=self.get_hidden_state,
                                 layer_list=self.layer_list
                             )
-                        if self.add_mlp:
-                            hidden_states_ls[0]=self.actor_module.custom_mlp(hidden_states_ls[0])
-                        if self.config.get("mlp_golden",False):
-                            with torch.no_grad():
-                                golden_hidden_ls[0]=self.actor_module.custom_mlp(golden_hidden_ls[0])
+                        # if self.add_mlp:
+                        #     hidden_states_ls[0]=self.actor_module.custom_mlp(hidden_states_ls[0])
+                        # if self.config.get("mlp_golden",False):
+                        #     with torch.no_grad():
+                        #         golden_hidden_ls[0]=self.actor_module.custom_mlp(golden_hidden_ls[0])
                         # === hidden states cosine similarity regularization ===
                         hidden_golden_loss = compute_golden_loss(
                             hidden_states_ls,
@@ -773,9 +773,11 @@ class DataParallelPPOActor(BasePPOActor):
                             response_mask,
                             model_inputs["golden_answer_attention_mask"],
                             model_inputs["token_level_scores"],
+                            mlp=self.actor_module.custom_mlp if self.add_mlp else None,
                             align_type=self.config.get("align_type","last_token"),
                             loss_type=self.config.get("loss_type","cosine"),
-                            normalize=self.config.get("norm_embeddings",False)
+                            normalize=self.config.get("norm_embeddings",False),
+                            config=self.config
                         )
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()

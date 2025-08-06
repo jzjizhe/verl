@@ -6,7 +6,7 @@ import math
 def process_hidden(hidden_states_ls):
     return hidden_states_ls[0]
 
-def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,align_type,loss_type,normalize=False):
+def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,mlp,align_type,loss_type,normalize,config=None):
     # scores=token_level_scores.sum(dim=1)
     # flip_scores=1-scores.unsqueeze(1)
     # hidden_length = hidden_states_ls[0].size(1)
@@ -21,7 +21,9 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
         last_golden_indices=golden_mask.sum(dim=1)-1
         golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
-        h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size) 
+        h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+        if config.get("add_mlp",False):
+            h1=mlp(h1)
     elif align_type=="all2last":
         last_golden_indices = golden_mask.sum(dim=1) - 1
         golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
