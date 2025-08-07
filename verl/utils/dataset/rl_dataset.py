@@ -216,8 +216,7 @@ class RLHFDataset(Dataset):
         messages = self._build_messages(row_dict)
         model_inputs = {}
         if self.tokenizer_golden_answer and row_dict['extra_info']['split']=='train':
-            eos_token = self.tokenizer.eos_token
-            raw_golden_answer = row_dict['golden_answer']+"<|im_end|>"
+            raw_golden_answer = row_dict['golden_answer']+self.tokenizer.eos_token
             # 1. 编码
             golden_answer_model_inputs = self.tokenizer(raw_golden_answer, return_tensors="pt", add_special_tokens=False)
             golden_answer_input_ids = golden_answer_model_inputs.pop("input_ids")
