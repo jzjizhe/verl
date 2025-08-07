@@ -325,12 +325,14 @@ class DataParallelPPOActor(BasePPOActor):
             hidden_states: # (bs, response_len, hidden_size) or None, 如果layer_list不为空，返回layer_list[0]对应的层
         """
         response_length = micro_batch["golden_answer_ids"].size(-1)
-        input_ids = micro_batch["input_ids"]
-        batch_size, seqlen = input_ids.shape
-        attention_mask = micro_batch["attention_mask"]
-        position_ids = micro_batch["position_ids"]
+        # mirco_batch["input_ids"]中包含prompt和model rollout的结果，需要将prompt单独拿出来与 golden response合并
+        prompt_length = micro_batch["input_ids"].size(1)-micro_batch['responses'].size(1)
+        input_ids = micro_batch["input_ids"][:,0:prompt_length]
+        attention_mask = micro_batch["attention_mask"][:,0:prompt_length]
+        position_ids = micro_batch["position_ids"][:,0:prompt_length]
         response=micro_batch['golden_answer_ids']
         input_ids = torch.cat([input_ids, response], dim=-1)
+        batch_size, seqlen = input_ids.shape
         delta_position_id = torch.arange(1, response_length + 1, device=position_ids.device)
         delta_position_id = delta_position_id.unsqueeze(0).repeat(batch_size, 1)
         if position_ids.dim() == 3:  # qwen2vl mrope [bs, 3, seq_len]
@@ -348,7 +350,6 @@ class DataParallelPPOActor(BasePPOActor):
 
         with torch.autocast(device_type=self.device_name, dtype=torch.bfloat16):
             # input_ids = micro_batch["golden_answer_ids"]
-            batch_size, seqlen = input_ids.shape
             # attention_mask = micro_batch["golden_answer_attention_mask"]
             # position_ids = micro_batch["golden_answer_position_ids"]
             entropy = None
@@ -612,7 +613,6 @@ class DataParallelPPOActor(BasePPOActor):
             log_probs_lst.append(log_probs)
             if calculate_entropy:
                 entropy_lst.append(entropy)
-
         log_probs = torch.concat(log_probs_lst, dim=0)
         entropys = None
         if calculate_entropy:
@@ -624,6 +624,76 @@ class DataParallelPPOActor(BasePPOActor):
                 entropys = restore_dynamic_batch(entropys, batch_idx_list)
 
         return log_probs, entropys
+    @GPUMemoryLogger(role="dp actor", logger=logger)
+    def compute_golden_hidden_states(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
+        """Compute the log probability of the responses given input_ids, attention_mask and position_ids
+
+        Args:
+            data (DataProto): a DataProto containing keys
+
+                ``input_ids``: tensor of shape [batch_size, sequence_length]. torch.int64. Note that input_ids is the
+                concatenation of prompt and response. Note that ``sequence_length = prompt_length + response_length``.
+
+                ``attention_mask``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+                ``position_ids``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+                ``responses``:  tensor of shape [batch_size, response_length]. torch.int64.
+
+        Returns:
+            torch.Tensor: the log_prob tensor
+        """
+        # set to eval
+        self.actor_module.eval()
+
+        micro_batch_size = data.meta_info["micro_batch_size"]
+        temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+        use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
+        has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
+        select_keys = ["responses", "input_ids", "attention_mask", "position_ids"]
+        select_keys+=['golden_answer_ids','golden_answer_position_ids','golden_answer_attention_mask']
+        non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
+
+        data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
+
+        if use_dynamic_bsz:
+            max_token_len = data.meta_info["max_token_len"] * self.ulysses_sequence_parallel_size
+            micro_batches, batch_idx_list = prepare_dynamic_batch(data, max_token_len=max_token_len)
+        else:
+            micro_batches = data.split(micro_batch_size)
+
+        # log_probs_lst = []
+        # entropy_lst = []
+        hidden_states_lst = []
+        for micro_batch in micro_batches:
+            model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
+            with torch.no_grad():
+                entropy, log_probs,hidden_states_ls = self._forward_micro_batch_golden_response(
+                    model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
+                    output_hidden_states=True,
+                    layer_list=[-1]
+                )
+            # log_probs_lst.append(log_probs)
+            # if calculate_entropy:
+                # entropy_lst.append(entropy)
+            h=hidden_states_ls[0]
+            last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
+            golden_batch_indices = torch.arange(h.size(0), device=h.device)
+            h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+            hidden_states_lst.append(h)
+        # log_probs = torch.concat(log_probs_lst, dim=0)
+        hidden_states = torch.concat(hidden_states_lst, dim=0)
+        # entropys = None
+        # if calculate_entropy:
+            # entropys = torch.concat(entropy_lst, dim=0)
+
+        if use_dynamic_bsz:
+            hidden_states = restore_dynamic_batch(hidden_states, batch_idx_list)
+            # log_probs = restore_dynamic_batch(log_probs, batch_idx_list)
+            # if calculate_entropy:
+                # entropys = restore_dynamic_batch(entropys, batch_idx_list)
+
+        return hidden_states
 
     def golden_loss_weight_schedule(self,step,loss_weight,total_steps,scheduler_type="cosine"):
         step-=1 # 0-indexed
@@ -666,6 +736,8 @@ class DataParallelPPOActor(BasePPOActor):
             total_steps = data.meta_info["total_steps"]
             select_keys+=['golden_answer_ids','golden_answer_position_ids','golden_answer_attention_mask']
             golden_loss_weight = self.golden_loss_weight_schedule(step,self.golden_loss_weight,total_steps,scheduler_type=self.config.get("golden_loss_scheduler_type","constant"))
+        if self.config.golden_from=="ref":
+            select_keys.append("golden_ref_hidden_states")
 
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
@@ -753,14 +825,17 @@ class DataParallelPPOActor(BasePPOActor):
                         policy_loss = pg_loss
                         
                     if self.use_golden_loss:
-                        with torch.no_grad():
-                            golden_entropy,golden_log_prob,golden_hidden_ls= self._forward_micro_batch_golden_response(
-                                model_inputs,
-                                temperature=temperature,
-                                calculate_entropy=calculate_entropy,
-                                output_hidden_states=self.get_hidden_state,
-                                layer_list=self.layer_list
-                            )
+                        if self.config.golden_from=="ref":
+                            golden_hidden_ls=model_inputs["golden_ref_hidden_states"]
+                        else:
+                            with torch.no_grad():
+                                golden_entropy,golden_log_prob,golden_hidden_ls= self._forward_micro_batch_golden_response(
+                                    model_inputs,
+                                    temperature=temperature,
+                                    calculate_entropy=calculate_entropy,
+                                    output_hidden_states=self.get_hidden_state,
+                                    layer_list=self.layer_list
+                                )
                         # if self.add_mlp:
                         #     hidden_states_ls[0]=self.actor_module.custom_mlp(hidden_states_ls[0])
                         # if self.config.get("mlp_golden",False):

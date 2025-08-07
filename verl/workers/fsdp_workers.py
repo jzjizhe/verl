@@ -841,6 +841,42 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             self.ref_policy.actor_module._handle.reshard(True)
 
         return output
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    @DistProfiler.annotate(color="olive", role="ref_compute_log_prob")
+    def compute_ref_golden_hidden_states(self, data: DataProto):
+        if self._is_lora:
+            # if _is_lora, actor without lora applied is the ref
+            data.meta_info["is_lora"] = True
+            data = self.compute_log_prob(data)
+            # this old_log_probs is in fact ref_log_prob
+            data = DataProto.from_dict(tensors={"ref_log_prob": data.batch["old_log_probs"]})
+            return data
+        assert self._is_ref
+        # else:
+        # otherwise, the class have a standalone ref model
+        # Support all hardwares
+        data = data.to(get_device_id())
+        micro_batch_size = self.config.ref.log_prob_micro_batch_size_per_gpu
+        data.meta_info["micro_batch_size"] = micro_batch_size
+        data.meta_info["temperature"] = self.config.rollout.temperature
+        data.meta_info["max_token_len"] = self.config.ref.log_prob_max_token_len_per_gpu
+        data.meta_info["use_dynamic_bsz"] = self.config.ref.log_prob_use_dynamic_bsz
+        with self.ulysses_sharding_manager:
+            data = self.ulysses_sharding_manager.preprocess_data(data)
+            hidden_states= self.ref_policy.compute_golden_hidden_states(data=data, calculate_entropy=False)
+            # output = DataProto.from_dict(tensors={"ref_log_prob": output})
+            # output = self.ulysses_sharding_manager.postprocess_data(output)
+            hidden_states=DataProto.from_dict(tensors={"golden_ref_hidden_states": hidden_states})
+
+        # output = output.to("cpu")
+        hidden_states=hidden_states.to("cpu")
+
+        # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+        # unshard the root FSDP module
+        if self.world_size > 1 and fsdp_version(self.ref_policy.actor_module) == 1:
+            self.ref_policy.actor_module._handle.reshard(True)
+
+        return hidden_states
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None):

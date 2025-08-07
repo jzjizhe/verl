@@ -1264,6 +1264,13 @@ class RayPPOTrainer:
                             else:
                                 ref_log_prob = self.actor_rollout_wg.compute_ref_log_prob(batch)
                             batch = batch.union(ref_log_prob)
+                    if self.use_reference_policy and self.config.actor_rollout_ref.actor.golden_from=="ref":
+                        with marked_timer("ref_golden_hidden_states", timing_raw, color="olive"):
+                            if not self.ref_in_actor:
+                                ref_golden_hidden_states = self.ref_policy_wg.compute_ref_golden_hidden_states(batch)
+                            else:
+                                ref_golden_hidden_states = self.actor_rollout_wg.compute_golden_hidden_states(batch)
+                            batch = batch.union(ref_golden_hidden_states)
 
                     # compute values
                     if self.use_critic:
