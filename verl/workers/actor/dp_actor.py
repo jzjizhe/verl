@@ -118,6 +118,10 @@ class DataParallelPPOActor(BasePPOActor):
             if position_ids.dim() == 3:  # qwen2vl mrope
                 position_ids = position_ids.transpose(0, 1)  # (bsz, 3, seqlen) -> (3, bsz, seqlen)
 
+            if output_hidden_states and self.config.align_type=='last_token':
+                prompt_length = micro_batch["input_ids"].size(1)-response_length
+                #得到的hidden_states是prompt和response共同的,需要减去prompt的长度
+                token_idx=micro_batch["response_mask"].sum(dim=1)-1 + prompt_length
             if self.use_remove_padding:
                 # input_ids.size()=[4,2048]
                 # input_ids.unsqueeze(-1).size()=[4,2048,1]
@@ -266,7 +270,9 @@ class DataParallelPPOActor(BasePPOActor):
                     entropy = full_entropy.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
-                    hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
+                    batch_indices = torch.arange(batch_size, device=token_idx.device)
+                    hidden_states_ls=[item[batch_indices,token_idx] for item in hidden_states_ls]
+                    # hidden_states_ls=[item for item in hidden_states_ls]
                     # for hidden_states in full_hidden_states_ls:
                         # hidden_states_ls.append(hidden_states[:,-response_length-1:-1,:])
                 # if output_hidden_states and hidden_states is not None:
@@ -308,12 +314,8 @@ class DataParallelPPOActor(BasePPOActor):
                 # Extract hidden states if requested
                 if output_hidden_states and hasattr(output, 'hidden_states'):
                     if layer_list is not None and len(layer_list) > 0:
-                        # 如果指定了layer_list，使用layer_list[0]对应的层
-                        # target_layer = layer_list[0]
-                        # if isinstance(output.hidden_states, (list, tuple)):
-                            # 如果hidden_states是列表，直接索引
                         for target_layer in layer_list:
-                            hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
+                            hidden_states_ls.append(output.hidden_states[target_layer][:, token_idx, :])  # (bsz, response_length, hidden_size)
 
             return entropy, log_probs, hidden_states_ls
 
@@ -342,7 +344,8 @@ class DataParallelPPOActor(BasePPOActor):
         # response_attention_mask = get_response_mask(response_id=response, eos_token=eos_token_id, dtype=attention_mask.dtype)
         response_attention_mask = micro_batch['golden_answer_attention_mask']
         attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
-
+        if output_hidden_states and self.config.align_type=='last_token':
+            token_idx=response_attention_mask.sum(dim=1)-1 + prompt_length
         multi_modal_inputs = {}
         if "multi_modal_inputs" in micro_batch.keys():
             for key in micro_batch["multi_modal_inputs"][0].keys():
@@ -505,7 +508,9 @@ class DataParallelPPOActor(BasePPOActor):
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
                     # 获取的是response 的hiden state,而不是预测next token的状态
-                    hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
+                    batch_indices = torch.arange(batch_size, device=token_idx.device)
+                    hidden_states_ls=[item[batch_indices,token_idx] for item in hidden_states_ls]
+                    # hidden_states_ls=[item for item in hidden_states_ls]
                     # hidden_states_ls=[item[:,-response_length-1:-1,:] for item in hidden_states_ls]
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
@@ -544,7 +549,8 @@ class DataParallelPPOActor(BasePPOActor):
                 if output_hidden_states and hasattr(output, 'hidden_states'):
                     if layer_list is not None and len(layer_list) > 0:
                         for target_layer in layer_list:
-                            hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
+
+                            hidden_states_ls.append(output.hidden_states[target_layer][:, token_idx, :])  # (bsz, response_length, hidden_size)
             return entropy, log_probs, hidden_states_ls
 
     def _optimizer_step(self):
@@ -677,9 +683,9 @@ class DataParallelPPOActor(BasePPOActor):
             # if calculate_entropy:
                 # entropy_lst.append(entropy)
             h=hidden_states_ls[0]
-            last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
-            golden_batch_indices = torch.arange(h.size(0), device=h.device)
-            h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+            # last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
+            # golden_batch_indices = torch.arange(h.size(0), device=h.device)
+            # h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
             hidden_states_lst.append(h)
         # log_probs = torch.concat(log_probs_lst, dim=0)
         hidden_states = torch.concat(hidden_states_lst, dim=0)
