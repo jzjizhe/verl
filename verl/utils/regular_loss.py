@@ -13,17 +13,21 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     if config.golden_from!="ref":
         h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
     if align_type=="last_token":
-        last_token_indices=hidden_mask.sum(dim=1)-1
+        last_token_indices=hidden_mask.sum(dim=1)-2
         batch_indices = torch.arange(h1.size(0), device=h1.device)
         h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
         if config.golden_from!="ref":
-            last_golden_indices=golden_mask.sum(dim=1)-1
+            last_golden_indices=golden_mask.sum(dim=1)-2
             golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
             h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
         else:
             h2=golden_hidden_ls
         if config.get("add_mlp",False):
             h1=mlp(h1)
+    elif align_type=="global_pooling":
+        import pdb;pdb.set_trace()
+        h1=h1.sum(dim=1)/hidden_mask.sum(dim=1)
+        h2=h2.sum(dim=1)/golden_mask.sum(dim=1)
     elif align_type=="random_golden_bottom_k":
         # k=random.randint(0,9)
         k=torch.randint(0,10,size=(h1.size(0),),device=h1.device)
@@ -45,7 +49,18 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
     if loss_type=="cosine":
+        import pdb;pdb.set_trace()
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
+        hidden_golden_loss = 1 - cos_sim.mean()
+    elif loss_type=="mse":
+        hidden_golden_loss = F.mse_loss(h1, h2)
+    elif loss_type=="cosine_wrong":
+        # cos sim 的取值范围是[-1,1]
+        # cos sim 好像无法反应token representation之间的相似度
+        cos_sim = F.cosine_similarity(h1, h2, dim=-1)
+        score=token_level_scores.sum(-1)
+        import pdb;pdb.set_trace()
+        cos_sim=cos_sim*(1-score)
         hidden_golden_loss = 1 - cos_sim.mean()
     elif loss_type=="contrastive":
         df = pd.DataFrame({"uid": uid, "original_idx": range(len(uid))})
@@ -141,5 +156,3 @@ def contra_all_wrong(A, B, uids,scores, temperature=0.1):
     # 7. 计算Loss
     loss = F.cross_entropy(logits, labels)
     return loss
-def compute_infonce_loss(A,B,uids,temperature=0.1):
-    pass

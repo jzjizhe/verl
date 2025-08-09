@@ -34,7 +34,7 @@ from verl.utils.py_functional import append_to_dict
 from verl.utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_batch
 from verl.utils.torch_functional import logprobs_from_logits
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad, ulysses_pad_and_slice_inputs
-from verl.utils.regular_loss import compute_infonce_loss,compute_golden_loss
+from verl.utils.regular_loss import compute_golden_loss
 from verl.utils.custom_print import rank_zero_print
 from verl.workers.actor import BasePPOActor
 import math
@@ -267,10 +267,6 @@ class DataParallelPPOActor(BasePPOActor):
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
                     hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
-                    # for hidden_states in full_hidden_states_ls:
-                        # hidden_states_ls.append(hidden_states[:,-response_length-1:-1,:])
-                # if output_hidden_states and hidden_states is not None:
-                #     hidden_states_ls = full_hidden_states_ls[:, -response_length - 1 : -1, :]  # (bsz, response_length, hidden_size)
 
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
@@ -855,6 +851,8 @@ class DataParallelPPOActor(BasePPOActor):
                             uid=model_inputs["uid"],
                             config=self.config
                         )
+                        del golden_hidden_ls
+                        del hidden_states_ls
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()
                         metrics["actor/hidden_golden_weight"] = golden_loss_weight
@@ -869,13 +867,6 @@ class DataParallelPPOActor(BasePPOActor):
                         policy_loss = policy_loss + kl_loss * self.config.kl_loss_coef
                         micro_batch_metrics["actor/kl_loss"] = kl_loss.detach().item()
                         micro_batch_metrics["actor/kl_coef"] = self.config.kl_loss_coef
-                    # InfoNCE损失集成
-                    if self.use_infonce_loss:
-                        infonce_loss_value, infonce_accuracy = compute_infonce_loss(hidden_states_ls, response_mask, self.infonce_temperature)
-                        policy_loss = policy_loss + infonce_loss_value * self.infonce_weight
-                        metrics["actor/infonce_loss"] = infonce_loss_value.detach().item()
-                        metrics["actor/infonce_accuracy"] = infonce_accuracy.detach().item()
-                        metrics["actor/infonce_weight"] = self.infonce_weight
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
                         loss = policy_loss * (response_mask.shape[0] / self.config.ppo_mini_batch_size)
