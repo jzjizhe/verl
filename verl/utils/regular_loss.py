@@ -25,7 +25,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         if config.get("add_mlp",False):
             h1=mlp(h1)
     elif align_type=="global_pooling":
-        import pdb;pdb.set_trace()
         h1=h1.sum(dim=1)/hidden_mask.sum(dim=1)
         h2=h2.sum(dim=1)/golden_mask.sum(dim=1)
     elif align_type=="random_golden_bottom_k":
@@ -49,9 +48,14 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
     if loss_type=="cosine":
-        import pdb;pdb.set_trace()
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         hidden_golden_loss = 1 - cos_sim.mean()
+    if loss_type=="l1":
+        hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
+        hidden_golden_loss=hidden_golden_loss.mean(dim=-1)
+        score=token_level_scores.sum(-1)
+        hidden_golden_loss=hidden_golden_loss*(1-score)
+        hidden_golden_loss=hidden_golden_loss.mean()
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
@@ -59,7 +63,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         # cos sim 好像无法反应token representation之间的相似度
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         score=token_level_scores.sum(-1)
-        import pdb;pdb.set_trace()
         cos_sim=cos_sim*(1-score)
         hidden_golden_loss = 1 - cos_sim.mean()
     elif loss_type=="contrastive":
