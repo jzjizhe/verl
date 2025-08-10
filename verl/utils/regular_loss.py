@@ -12,50 +12,18 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     h1 = process_hidden(hidden_states_ls)  # (bsz, seq_len, hidden_size)
     if config.golden_from!="ref":
         h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
-    if align_type=="last_token":
-        last_token_indices=hidden_mask.sum(dim=1)-1
-        batch_indices = torch.arange(h1.size(0), device=h1.device)
-        h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
-        if config.golden_from!="ref":
-            last_golden_indices=golden_mask.sum(dim=1)-1
-            golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
-            h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
-        else:
-            h2=golden_hidden_ls
-        if config.get("add_mlp",False):
-            h1=mlp(h1)
-    elif align_type=="token-2":
-        last_token_indices=hidden_mask.sum(dim=1)-2
-        batch_indices = torch.arange(h1.size(0), device=h1.device)
-        h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
-        if config.golden_from!="ref":
-            last_golden_indices=golden_mask.sum(dim=1)-2
-            golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
-            h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
-        else:
-            h2=golden_hidden_ls
-        if config.get("add_mlp",False):
-            h1=mlp(h1)
-    elif align_type=="global_pooling":
-        h1=h1.sum(dim=1)/hidden_mask.sum(dim=1,keepdim=True)
-        h2=h2.sum(dim=1)/golden_mask.sum(dim=1,keepdim=True)
-    elif align_type=="random_golden_bottom_k":
-        # k=random.randint(0,9)
-        k=torch.randint(0,10,size=(h1.size(0),),device=h1.device)
-        last_token_indices=hidden_mask.sum(dim=1)-1
-        batch_indices = torch.arange(h1.size(0), device=h1.device)
-        h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size) 
-        last_golden_indices=golden_mask.sum(dim=1)-1-k
-        golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
-        h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
-        if config.get("add_mlp",False):
-            h1=mlp(h1)
-    elif align_type=="all2last":
-        last_golden_indices = golden_mask.sum(dim=1) - 1
-        golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
-        h2 = h2[golden_batch_indices, last_golden_indices].unsqueeze(1)  # (bsz, 1, hidden_size)
-    else:
-        raise ValueError(f"Invalid alignment type: {align_type}")
+    # if align_type=="last_token":
+    #     last_token_indices=hidden_mask.sum(dim=1)-1
+    #     batch_indices = torch.arange(h1.size(0), device=h1.device)
+    #     h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
+    #     if config.golden_from!="ref":
+    #         last_golden_indices=golden_mask.sum(dim=1)-1
+    #         golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
+    #         h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+    #     else:
+    #         h2=golden_hidden_ls
+    if config.get("add_mlp",False):
+        h1=mlp(h1)
     if normalize:
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)

@@ -48,6 +48,65 @@ __all__ = ["DataParallelPPOActor"]
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
+def find_special_positions(tensor, token_id, mask):
+    """
+    Args:
+        tensor: 2D tensor [batch_size, seq_len]
+        token_id: 目标token的ID
+        mask: padding掩码 (1表示有效，0表示padding)
+    
+    Returns:
+        1D tensor [batch_size] 包含每行最后一个token_id位置，
+        若不存在则返回pad_prev_pos，若差值超过10则强制返回pad_prev_pos
+    """
+    seq_len = tensor.size(1)
+    
+    # 计算最后一个token_id位置
+    mask_token = (tensor == token_id)
+    flipped_token = mask_token.flip(dims=[1])
+    last_token_idx_rev = flipped_token.int().argmax(dim=1)
+    last_token_pos = seq_len - 1 - last_token_idx_rev
+    
+    # 计算有效长度末尾位置
+    pad_prev_pos = mask.sum(dim=1) - 1
+    
+    # 初步结果：存在token_id则用其位置，否则用pad_prev_pos
+    has_token = mask_token.any(dim=1)
+    result = torch.where(has_token, last_token_pos, pad_prev_pos)
+    
+    # 强制覆盖条件：当差值超过10时使用pad_prev_pos
+    delta = pad_prev_pos - last_token_pos
+    override_mask = (delta > 20)
+    result = torch.where(override_mask, pad_prev_pos, result)
+    
+    return result
+
+# def find_special_positions(tensor, token_id,mask):
+#     """ 返回每行最后token_id位置，若无则返回首个pad_id前位置 """
+#     # 处理最后出现的token_id
+#     mask_token = (tensor == token_id)
+#     has_token = mask_token.any(dim=1)
+    
+#     # 反转后获取最后一个token_id位置
+#     flipped_token = mask_token.flip(dims=[1])
+#     last_token_idx_rev = flipped_token.int().argmax(dim=1)  # 反转维度后第一个True位置
+#     last_token_pos = tensor.size(1) - 1 - last_token_idx_rev
+
+#     pad_prev_pos=mask.sum(dim=1)-1
+#     result = torch.where(has_token, last_token_pos, pad_prev_pos)
+#     return result
+def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=79075):
+    if align_type=="last_token":
+        token_indices=mask.sum(dim=1)-1
+    elif align_type=="token-2":
+        token_indices=mask.sum(dim=1)-2
+    elif align_type=="box_token":
+        token_indices=find_special_positions(input_ids,token_id,mask)
+    else:
+        raise ValueError(f"Invalid alignment type: {align_type}")
+    batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
+    hidden_states_ls = [hidden_states[batch_indices, token_indices] for hidden_states in hidden_states_ls]
+    return hidden_states_ls
 
 class DataParallelPPOActor(BasePPOActor):
     def __init__(self, config, actor_module: nn.Module, actor_optimizer: torch.optim.Optimizer = None):
@@ -267,6 +326,11 @@ class DataParallelPPOActor(BasePPOActor):
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
                     hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
+                    hidden_states_ls=get_token_hidden_states(hidden_states_ls,
+                    align_type=self.config.align_type,
+                    mask=micro_batch["response_mask"],
+                    input_ids=input_ids[:,-response_length:])
+
 
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
@@ -502,6 +566,10 @@ class DataParallelPPOActor(BasePPOActor):
                 if output_hidden_states:
                     # 获取的是response 的hiden state,而不是预测next token的状态
                     hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
+                    hidden_states_ls=get_token_hidden_states(hidden_states_ls,
+                    align_type=self.config.align_type,
+                    mask=micro_batch["golden_answer_attention_mask"],
+                    input_ids=micro_batch["golden_answer_ids"])
                     # hidden_states_ls=[item[:,-response_length-1:-1,:] for item in hidden_states_ls]
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
@@ -673,9 +741,9 @@ class DataParallelPPOActor(BasePPOActor):
             # if calculate_entropy:
                 # entropy_lst.append(entropy)
             h=hidden_states_ls[0]
-            last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
-            golden_batch_indices = torch.arange(h.size(0), device=h.device)
-            h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+            # last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
+            # golden_batch_indices = torch.arange(h.size(0), device=h.device)
+            # h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
             hidden_states_lst.append(h)
         # log_probs = torch.concat(log_probs_lst, dim=0)
         hidden_states = torch.concat(hidden_states_lst, dim=0)
