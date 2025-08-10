@@ -66,15 +66,23 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
         hidden_golden_loss=hidden_golden_loss.mean(dim=-1)
         flip_score=1-token_level_scores.sum(-1)
-        total_flip=flip_score.sum() 
-        hidden_golden_loss = (hidden_golden_loss * flip_score).sum() / total_flip if total_flip > 0 else 0
+        total_flip=flip_score.sum()
+        hidden_golden_loss = (
+            (hidden_golden_loss * flip_score).sum() / total_flip 
+            if total_flip > 0 
+            else torch.zeros_like(hidden_golden_loss).sum()  # 返回同设备/类型的零张量
+        ) 
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         flip_score = 1-token_level_scores.sum(-1)
         total_flip = flip_score.sum()
-        hidden_golden_loss = 1 - (cos_sim * flip_score).sum() / total_flip if total_flip > 0 else 0
+        hidden_golden_loss = (
+            1 - (cos_sim * flip_score).sum() / total_flip 
+            if total_flip > 0 
+            else torch.zeros_like(cos_sim).sum()  # 返回同设备/类型的零张量
+        ) 
     elif loss_type=="contrastive":
         df = pd.DataFrame({"uid": uid, "original_idx": range(len(uid))})
         unique_df = df.drop_duplicates("uid", keep="first").reset_index(drop=True)  # 重置索引为0,1,2,...
