@@ -13,6 +13,18 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     if config.golden_from!="ref":
         h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
     if align_type=="last_token":
+        last_token_indices=hidden_mask.sum(dim=1)-1
+        batch_indices = torch.arange(h1.size(0), device=h1.device)
+        h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
+        if config.golden_from!="ref":
+            last_golden_indices=golden_mask.sum(dim=1)-1
+            golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
+            h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+        else:
+            h2=golden_hidden_ls
+        if config.get("add_mlp",False):
+            h1=mlp(h1)
+    elif align_type=="token-2":
         last_token_indices=hidden_mask.sum(dim=1)-2
         batch_indices = torch.arange(h1.size(0), device=h1.device)
         h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
@@ -50,21 +62,19 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     if loss_type=="cosine":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         hidden_golden_loss = 1 - cos_sim.mean()
-    elif loss_type=="l1":
+    elif loss_type=="l1_wrong":
         hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
         hidden_golden_loss=hidden_golden_loss.mean(dim=-1)
         flip_score=1-token_level_scores.sum(-1)
-        hidden_golden_loss=hidden_golden_loss*flip_score
-        hidden_golden_loss=hidden_golden_loss.sum()/flip_score.sum()
+        total_flip=flip_score.sum() 
+        hidden_golden_loss = (hidden_golden_loss * flip_score).sum() / total_flip if total_flip > 0 else 0
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
-        # cos sim 的取值范围是[-1,1]
-        # cos sim 好像无法反应token representation之间的相似度
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
-        flip_score=1-token_level_scores.sum(-1)
-        cos_sim=cos_sim*flip_score
-        hidden_golden_loss = 1 - cos_sim.sum()/flip_score.sum()
+        flip_score = 1-token_level_scores.sum(-1)
+        total_flip = flip_score.sum()
+        hidden_golden_loss = 1 - (cos_sim * flip_score).sum() / total_flip if total_flip > 0 else 0
     elif loss_type=="contrastive":
         df = pd.DataFrame({"uid": uid, "original_idx": range(len(uid))})
         unique_df = df.drop_duplicates("uid", keep="first").reset_index(drop=True)  # 重置索引为0,1,2,...
