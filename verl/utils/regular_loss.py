@@ -25,8 +25,8 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         if config.get("add_mlp",False):
             h1=mlp(h1)
     elif align_type=="global_pooling":
-        h1=h1.sum(dim=1)/hidden_mask.sum(dim=1)
-        h2=h2.sum(dim=1)/golden_mask.sum(dim=1)
+        h1=h1.sum(dim=1)/hidden_mask.sum(dim=1,keepdim=True)
+        h2=h2.sum(dim=1)/golden_mask.sum(dim=1,keepdim=True)
     elif align_type=="random_golden_bottom_k":
         # k=random.randint(0,9)
         k=torch.randint(0,10,size=(h1.size(0),),device=h1.device)
@@ -50,6 +50,12 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     if loss_type=="cosine":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         hidden_golden_loss = 1 - cos_sim.mean()
+    elif loss_type=="l1":
+        hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
+        hidden_golden_loss=hidden_golden_loss.mean(dim=-1)
+        score=token_level_scores.sum(-1)
+        hidden_golden_loss=hidden_golden_loss*(1-score)
+        hidden_golden_loss=hidden_golden_loss.mean()
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
