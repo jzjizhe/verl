@@ -95,7 +95,7 @@ class DataParallelPPOActor(BasePPOActor):
         if self.add_mlp:
             rank_zero_print("add mlp")
         
-    def _forward_micro_batch(self, micro_batch, temperature, calculate_entropy=False, output_hidden_states=False, layer_list=None):
+    def _forward_micro_batch(self, micro_batch, temperature, calculate_entropy=False, output_hidden_states=False,token_idx=None, layer_list=None):
         """
         Returns:
             entropy: # (bs, response_len)
