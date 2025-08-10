@@ -56,12 +56,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         score=token_level_scores.sum(-1)
         hidden_golden_loss=hidden_golden_loss*(1-score)
         hidden_golden_loss=hidden_golden_loss.mean()
-    if loss_type=="l1":
-        hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
-        hidden_golden_loss=hidden_golden_loss.mean(dim=-1)
-        score=token_level_scores.sum(-1)
-        hidden_golden_loss=hidden_golden_loss*(1-score)
-        hidden_golden_loss=hidden_golden_loss.mean()
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
