@@ -106,6 +106,7 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
         raise ValueError(f"Invalid alignment type: {align_type}")
     batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
     hidden_states_ls = [hidden_states[batch_indices, token_indices] for hidden_states in hidden_states_ls]
+    hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
     return hidden_states_ls
 
 class DataParallelPPOActor(BasePPOActor):

@@ -6,22 +6,13 @@ import pandas as pd
 import random
 
 def process_hidden(hidden_states_ls):
-    return hidden_states_ls[0]
+    # return hidden_states_ls[0]
+    return hidden_states_ls
 
 def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,mlp,align_type,loss_type,normalize,uid,config=None):
     h1 = process_hidden(hidden_states_ls)  # (bsz, seq_len, hidden_size)
     if config.golden_from!="ref":
         h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
-    # if align_type=="last_token":
-    #     last_token_indices=hidden_mask.sum(dim=1)-1
-    #     batch_indices = torch.arange(h1.size(0), device=h1.device)
-    #     h1 = h1[batch_indices, last_token_indices] # (bsz, hidden_size)
-    #     if config.golden_from!="ref":
-    #         last_golden_indices=golden_mask.sum(dim=1)-1
-    #         golden_batch_indices = torch.arange(h2.size(0), device=h2.device)
-    #         h2 = h2[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
-    #     else:
-    #         h2=golden_hidden_ls
     if config.get("add_mlp",False):
         h1=mlp(h1)
     if normalize:
@@ -43,7 +34,7 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
-        cos_sim = F.cosine_similarity(h1, h2, dim=-1)
+        cos_sim = F.cosine_similarity(h1, h2, dim=-1).mean(dim=-1)
         flip_score = 1-token_level_scores.sum(-1)
         total_flip = flip_score.sum()
         hidden_golden_loss = (
