@@ -53,18 +53,18 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="l1":
         hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
         hidden_golden_loss=hidden_golden_loss.mean(dim=-1)
-        score=token_level_scores.sum(-1)
-        hidden_golden_loss=hidden_golden_loss*(1-score)
-        hidden_golden_loss=hidden_golden_loss.mean()
+        flip_score=1-token_level_scores.sum(-1)
+        hidden_golden_loss=hidden_golden_loss*flip_score
+        hidden_golden_loss=hidden_golden_loss.sum()/flip_score.sum()
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
         # cos sim 的取值范围是[-1,1]
         # cos sim 好像无法反应token representation之间的相似度
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
-        score=token_level_scores.sum(-1)
-        cos_sim=cos_sim*(1-score)
-        hidden_golden_loss = 1 - cos_sim.mean()
+        flip_score=1-token_level_scores.sum(-1)
+        cos_sim=cos_sim*flip_score
+        hidden_golden_loss = 1 - cos_sim.sum()/flip_score.sum()
     elif loss_type=="contrastive":
         df = pd.DataFrame({"uid": uid, "original_idx": range(len(uid))})
         unique_df = df.drop_duplicates("uid", keep="first").reset_index(drop=True)  # 重置索引为0,1,2,...
