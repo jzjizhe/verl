@@ -4,7 +4,89 @@ import torch.nn.functional as F
 import math
 import pandas as pd
 import random
+def off_diagonal(x):
+    """获取矩阵的非对角线元素"""
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n-1, n+1)[:, 1:].flatten()
 
+def vicreg_h1(h1, h2,flip_score):
+    """
+    调整后的VICReg损失函数：
+    - h1: 生成器输出的response隐藏状态 (batch_size, layers, embed_dim)
+    - h2: 黄金答案的隐藏状态 (batch_size, layers, embed_dim)
+    - config: 包含lambda, mu, nu超参数的配置字典
+    """
+    layers = h1.shape[1]
+    total_loss = 0.0
+    
+    for i in range(layers):
+        z_a = h1[:, i, :]  # 生成特征（第i层）
+        z_b = h2[:, i, :]  # 黄金特征（第i层）
+        batch_size, embed_dim = z_a.shape[0], z_a.shape[1]
+        # 1. 不变性损失：生成特征与黄金特征对齐（两者都参与）
+        sim_loss = F.mse_loss(z_a, z_b,reduction="none").mean(dim=-1)
+        sim_loss=(sim_loss*flip_score).mean()
+        
+        # 2. 方差损失：仅对生成特征h1施加约束（保证多样性）
+        std_z_a = torch.sqrt(z_a.var(dim=0) + 1e-04)
+        std_loss = torch.mean(F.relu(1 - std_z_a))  # 只计算z_a的方差损失
+        
+        # 3. 协方差损失：仅对生成特征h1施加约束（减少冗余）
+        z_a_centered = z_a - z_a.mean(dim=0)
+        cov_z_a = (z_a_centered.T @ z_a_centered) / (batch_size - 1)
+        cov_loss = torch.pow(off_diagonal(cov_z_a), 2).sum() / embed_dim  # 只计算z_a的协方差损失
+        
+        # 累加当前层的损失
+        layer_loss = (25* sim_loss + 
+                     25 * std_loss + 
+                     1 * cov_loss)
+        total_loss += layer_loss
+    total_loss /= layers
+    return total_loss
+    
+
+def vicreg_loss(h1, h2,flip_score):
+    """
+    VICReg损失函数的PyTorch实现
+    
+    参数:
+        z_a: 第一个视图的特征 (batch_size, embed_dim)
+        z_b: 第二个视图的特征 (batch_size, embed_dim)
+        config: 包含lambda, mu, nu超参数的配置字典
+    """
+    layers=h1.shape[1]
+    loss=0
+    for i in range(layers):
+        z_a=h1[:,i,:]
+        z_b=h2[:,i,:]
+        batch_size, embed_dim = z_a.shape[0], z_a.shape[1]
+        # 不变性损失 (Invariance Loss)
+        sim_loss = F.mse_loss(z_a, z_b,reduction="none").mean(dim=-1)
+        sim_loss=(sim_loss*flip_score).mean()
+        
+        # 方差损失 (Variance Loss)
+        std_z_a = torch.sqrt(z_a.var(dim=0) + 1e-04)  # 每个维度的标准差
+        std_z_b = torch.sqrt(z_b.var(dim=0) + 1e-04)
+        std_loss = (torch.mean(F.relu(1 - std_z_a)) + torch.mean(F.relu(1 - std_z_b))) * 0.5
+        
+        # 协方差损失 (Covariance Loss)
+        # 中心化特征
+        z_a_centered = z_a - z_a.mean(dim=0)
+        z_b_centered = z_b - z_b.mean(dim=0)
+        # 计算协方差矩阵
+        cov_z_a = (z_a_centered.T @ z_a_centered) / (batch_size - 1)
+        cov_z_b = (z_b_centered.T @ z_b_centered) / (batch_size - 1)
+        # 计算非对角线元素的平方和
+        cov_loss = (torch.pow(off_diagonal(cov_z_a), 2).sum() + 
+                    torch.pow(off_diagonal(cov_z_b), 2).sum()) / embed_dim
+        
+        # 总损失
+        layer_loss=25* sim_loss + 25 * std_loss + 1 * cov_loss
+        print(f"sim_loss: {sim_loss}, std_loss: {std_loss}, cov_loss: {cov_loss}")
+        loss += layer_loss
+    loss /= layers
+    return loss
 def process_hidden(hidden_states_ls):
     # return hidden_states_ls[0]
     return hidden_states_ls
@@ -63,6 +145,14 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         hidden_golden_loss=contra_all(h1,h2,uid,temperature=0.1)
     elif loss_type=="contra_all_wrong":
         hidden_golden_loss=contra_all_wrong(h1,h2,uid,token_level_scores,temperature=0.1)
+    elif loss_type=="vicreg":
+        flip_score=1-token_level_scores.sum(-1)
+        hidden_golden_loss=vicreg_loss(h1,h2,flip_score)
+        print(f"hidden_golden_loss: {hidden_golden_loss}")
+        import pdb;pdb.set_trace()
+    elif loss_type=="vicreg_h1":
+        flip_score=1-token_level_scores.sum(-1)
+        hidden_golden_loss=vicreg_h1(h1,h2,flip_score)
     else:
         raise ValueError(f"Invalid loss type: {loss_type}")
     return hidden_golden_loss
