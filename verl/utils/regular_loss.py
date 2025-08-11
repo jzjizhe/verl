@@ -148,8 +148,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="vicreg":
         flip_score=1-token_level_scores.sum(-1)
         hidden_golden_loss=vicreg_loss(h1,h2,flip_score)
-        print(f"hidden_golden_loss: {hidden_golden_loss}")
-        import pdb;pdb.set_trace()
     elif loss_type=="vicreg_h1":
         flip_score=1-token_level_scores.sum(-1)
         hidden_golden_loss=vicreg_h1(h1,h2,flip_score)
