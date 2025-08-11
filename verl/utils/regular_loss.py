@@ -15,6 +15,9 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
     if config.get("add_mlp",False):
         h1=mlp(h1)
+    if config.get("add_mlp_golden",False):
+        with torch.no_grad():
+            h2=mlp(h2)
     if normalize:
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
@@ -31,6 +34,8 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
             if total_flip > 0 
             else torch.zeros_like(hidden_golden_loss).sum()  # 返回同设备/类型的零张量
         ) 
+    elif loss_type=="l1":
+        hidden_golden_loss = F.l1_loss(h1, h2)
     elif loss_type=="mse":
         hidden_golden_loss = F.mse_loss(h1, h2)
     elif loss_type=="cosine_wrong":
@@ -128,6 +133,7 @@ def contra_all_wrong(A, B, uids,scores, temperature=0.1):
         [bsz_A + uid_to_idx[uid] for uid in uids], 
         device=A.device
     )
+
     
     # 6. 屏蔽无效位置（A[i]不应与A[i]自己计算相似度）
     mask = torch.eye(bsz_A, dtype=torch.bool, device=A.device)

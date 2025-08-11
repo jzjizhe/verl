@@ -17,6 +17,7 @@ class MLP(nn.Module):
             layers.append(nn.Linear(in_dim, out_dim))
             if i < mlp_layers - 1:
                 layers.append(nn.GELU())
+        layers.append(nn.LayerNorm(input_size))
         return nn.Sequential(*layers)
     def forward(self, x):
         return self.layers(x)

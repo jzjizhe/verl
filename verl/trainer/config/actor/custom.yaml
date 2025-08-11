@@ -4,6 +4,7 @@ golden_loss_weight: 0.001
 get_hidden_state: False
 layer_list: []
 add_mlp:
+add_mlp_golden:
 mlp_intermidiate_size:
 norm_embeddings: False
 mlp_golden: False
