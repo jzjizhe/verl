@@ -11,12 +11,6 @@ def off_diagonal(x):
     return x.flatten()[:-1].view(n-1, n+1)[:, 1:].flatten()
 
 def vicreg_h1(h1, h2,flip_score):
-    """
-    调整后的VICReg损失函数：
-    - h1: 生成器输出的response隐藏状态 (batch_size, layers, embed_dim)
-    - h2: 黄金答案的隐藏状态 (batch_size, layers, embed_dim)
-    - config: 包含lambda, mu, nu超参数的配置字典
-    """
     layers = h1.shape[1]
     total_loss = 0.0
     
@@ -47,14 +41,6 @@ def vicreg_h1(h1, h2,flip_score):
     
 
 def vicreg_loss(h1, h2,flip_score):
-    """
-    VICReg损失函数的PyTorch实现
-    
-    参数:
-        z_a: 第一个视图的特征 (batch_size, embed_dim)
-        z_b: 第二个视图的特征 (batch_size, embed_dim)
-        config: 包含lambda, mu, nu超参数的配置字典
-    """
     layers=h1.shape[1]
     loss=0
     for i in range(layers):
@@ -83,7 +69,6 @@ def vicreg_loss(h1, h2,flip_score):
         
         # 总损失
         layer_loss=25* sim_loss + 25 * std_loss + 1 * cov_loss
-        print(f"sim_loss: {sim_loss}, std_loss: {std_loss}, cov_loss: {cov_loss}")
         loss += layer_loss
     loss /= layers
     return loss
@@ -92,9 +77,8 @@ def process_hidden(hidden_states_ls):
     return hidden_states_ls
 
 def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,mlp,align_type,loss_type,normalize,uid,config=None):
-    h1 = process_hidden(hidden_states_ls)  # (bsz, seq_len, hidden_size)
-    if config.golden_from!="ref":
-        h2 = process_hidden(golden_hidden_ls)  # (bsz, seq_len, hidden_size)
+    h1 = hidden_states_ls  # (bsz, seq_len, hidden_size)
+    h2 = golden_hidden_ls  # (bsz, seq_len, hidden_size)
     if config.get("add_mlp",False):
         h1=mlp(h1)
     if config.get("add_mlp_golden",False):

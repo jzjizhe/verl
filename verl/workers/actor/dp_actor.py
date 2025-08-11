@@ -736,12 +736,12 @@ class DataParallelPPOActor(BasePPOActor):
                 entropy, log_probs,hidden_states_ls = self._forward_micro_batch_golden_response(
                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
                     output_hidden_states=True,
-                    layer_list=[-1]
+                    layer_list=self.layer_list
                 )
             # log_probs_lst.append(log_probs)
             # if calculate_entropy:
                 # entropy_lst.append(entropy)
-            h=hidden_states_ls[0]
+            h=hidden_states_ls
             # last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
             # golden_batch_indices = torch.arange(h.size(0), device=h.device)
             # h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
