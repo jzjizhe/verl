@@ -81,20 +81,6 @@ def find_special_positions(tensor, token_id, mask):
     
     return result
 
-# def find_special_positions(tensor, token_id,mask):
-#     """ 返回每行最后token_id位置，若无则返回首个pad_id前位置 """
-#     # 处理最后出现的token_id
-#     mask_token = (tensor == token_id)
-#     has_token = mask_token.any(dim=1)
-    
-#     # 反转后获取最后一个token_id位置
-#     flipped_token = mask_token.flip(dims=[1])
-#     last_token_idx_rev = flipped_token.int().argmax(dim=1)  # 反转维度后第一个True位置
-#     last_token_pos = tensor.size(1) - 1 - last_token_idx_rev
-
-#     pad_prev_pos=mask.sum(dim=1)-1
-#     result = torch.where(has_token, last_token_pos, pad_prev_pos)
-#     return result
 def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=79075):
     if align_type=="last_token":
         token_indices=mask.sum(dim=1)-1
@@ -102,6 +88,8 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
         token_indices=mask.sum(dim=1)-2
     elif align_type=="box_token":
         token_indices=find_special_positions(input_ids,token_id,mask)
+    elif align_type=="all_token":
+        return torch.stack(hidden_states_ls,dim=0).transpose(0,1)
     else:
         raise ValueError(f"Invalid alignment type: {align_type}")
     batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)

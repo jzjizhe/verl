@@ -77,8 +77,8 @@ def process_hidden(hidden_states_ls):
     return hidden_states_ls
 
 def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_mask,token_level_scores,mlp,align_type,loss_type,normalize,uid,config=None):
-    h1 = hidden_states_ls  # (bsz, seq_len, hidden_size)
-    h2 = golden_hidden_ls  # (bsz, seq_len, hidden_size)
+    h1 = hidden_states_ls  # (bsz, layers, seq_len, hidden_dim)
+    h2 = golden_hidden_ls  # (bsz, layers, seq_len, hidden_dim)
     if config.get("add_mlp",False):
         h1=mlp(h1)
     if config.get("add_mlp_golden",False):
@@ -135,6 +135,11 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="vicreg_h1":
         flip_score=1-token_level_scores.sum(-1)
         hidden_golden_loss=vicreg_h1(h1,h2,flip_score)
+    elif loss_type=="attention":
+        hidden_golden_loss=cross_attention_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,temperature=0.1)
+        print(hidden_golden_loss)
+        import pdb;pdb.set_trace()
+
     else:
         raise ValueError(f"Invalid loss type: {loss_type}")
     return hidden_golden_loss
@@ -215,4 +220,59 @@ def contra_all_wrong(A, B, uids,scores, temperature=0.1):
     
     # 7. 计算Loss
     loss = F.cross_entropy(logits, labels)
+    return loss
+
+def cross_attention_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, temperature=0.1):
+    """
+    支持padding和mask的交叉对齐损失函数
+    
+    参数:
+        gen_hidden: 生成序列的hidden state，形状为[batch, gen_seq_len, dim]
+        gold_hidden: 黄金答案的hidden state，形状为[batch, gold_seq_len, dim]
+        gen_mask: 生成序列的mask，1表示有效token，0表示padding，形状为[batch, gen_seq_len]
+                  若为None则默认所有位置都是有效token
+        gold_mask: 黄金答案的mask，1表示有效token，0表示padding，形状为[batch, gold_seq_len]
+                  若为None则默认所有位置都是有效token
+        temperature: 注意力缩放因子，控制注意力分布的陡峭程度
+    
+    返回:
+        loss: 交叉对齐损失值
+    """
+    batch_size, gen_seq_len, dim = gen_hidden.shape
+    gold_seq_len = gold_hidden.shape[1]
+    
+    # 处理mask，默认全为1（有效）
+    # if gen_mask is None:
+    #     gen_mask = torch.ones((batch_size, gen_seq_len), dtype=torch.float32, device=gen_hidden.device)
+    # if gold_mask is None:
+    #     gold_mask = torch.ones((batch_size, gold_seq_len), dtype=torch.float32, device=gold_hidden.device)
+    
+    # 计算注意力分数: [batch, gen_seq_len, gold_seq_len]
+    attn_scores = torch.bmm(gen_hidden, gold_hidden.transpose(1, 2))  # 内积计算相似度
+    attn_scores = attn_scores / (dim **0.5)  # 缩放
+    attn_scores = attn_scores / temperature  # 温度调节
+    
+    # 对padding位置的注意力分数设置为极小值，使其在softmax后权重接近0
+    # 将gold_mask扩展为[batch, 1, gold_seq_len]用于广播
+    gold_mask_expanded = gold_mask.unsqueeze(1)  # [batch, 1, gold_seq_len]
+    attn_scores = attn_scores.masked_fill(gold_mask_expanded == 0, -1e9)
+    
+    # 计算注意力权重 (对gold序列维度做softmax)
+    attn_weights = F.softmax(attn_scores, dim=-1)  # [batch, gen_seq_len, gold_seq_len]
+    
+    # 生成对齐向量: 基于注意力权重对gold_hidden进行加权求和
+    aligned_gold_hidden = torch.bmm(attn_weights, gold_hidden)  # [batch, gen_seq_len, dim]
+    
+    # 计算生成序列hidden state与对齐向量的MSE损失，忽略padding部分
+    # 将gen_mask扩展为[batch, gen_seq_len, 1]用于广播
+    gen_mask_expanded = gen_mask.unsqueeze(-1)  # [batch, gen_seq_len, 1]
+    
+    # 只计算有效token的损失
+    mse = F.mse_loss(gen_hidden, aligned_gold_hidden, reduction='none')  # [batch, gen_seq_len, dim]
+    mse = mse * gen_mask_expanded  # 屏蔽padding部分的损失
+    
+    # 计算平均损失，除以有效token的数量
+    valid_count = gen_mask.sum() * dim  # 总有效元素数量
+    loss = mse.sum() / valid_count.clamp(min=1e-8)  # 避免除以0
+    
     return loss
