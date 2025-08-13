@@ -138,8 +138,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="attention":
         hidden_golden_loss=cross_attention_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,temperature=0.1)
         print(hidden_golden_loss)
-        import pdb;pdb.set_trace()
-
     else:
         raise ValueError(f"Invalid loss type: {loss_type}")
     return hidden_golden_loss
