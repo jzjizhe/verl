@@ -42,7 +42,6 @@ from verl.workers.fsdp_workers import ActorRolloutRefWorker
 
 @hydra.main(config_path="config", config_name="generation", version_base=None)
 def main(config):
-    import pdb;pdb.set_trace()
     run_generation(config)
 
 
