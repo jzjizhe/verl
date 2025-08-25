@@ -1,4 +1,5 @@
 
+
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 # Copyright 2023-2024 SGLang Team
 # Copyright 2025 ModelBest Inc. and/or its affiliates
@@ -27,7 +28,7 @@ from verl.utils.hdfs_io import copy, makedirs
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--local_dir", default="/home/hhzhang/improve/verl/datasets/dapo")
+    parser.add_argument("--local_dir", default="/home/hhzhang/improve/verl/datasets/dapo_gold")
     parser.add_argument("--hdfs_dir", default=None)
 
     args = parser.parse_args()
@@ -51,6 +52,8 @@ if __name__ == "__main__":
             #     },
             # }
             # example["extra_info"] = extra_info
+            answer = example.pop("solution")
+            example["golden_answer"] = answer
             return example
 
         return process_fn
