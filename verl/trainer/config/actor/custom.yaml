@@ -3,8 +3,9 @@ use_golden_loss: False
 golden_loss_weight: 0.001
 get_hidden_state: False
 layer_list: []
-add_mlp:
-add_mlp_golden:
+add_mlp: False
+add_mlp_golden: False
+add_attention_pooling: False
 mlp_intermidiate_size:
 norm_embeddings: False
 mlp_golden: False

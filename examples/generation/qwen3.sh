@@ -1,9 +1,10 @@
 
 set -x
-
-data_path=/data0/jzzhang/verl/datasets/math500/test.parquet
-save_path=$HOME/data/gsm8k/deepseek_v2_lite_gen_test.parquet
-model_path=/data1/jzzhang/verl_results/Qwen2.5-3B/qwen3b_ep3_math_golden/model/global_step_10/actor
+data_path=/home/hhzhang/improve/verl/datasets/math500/test.parquet
+save_path=/data1/hhzhang/improve/verl_results/math500/test_llama8b_gen.parquet
+# model_path=/data2/data/llama/Llama-3.1-8B
+model_path=/data2/data/qwen/Qwen2.5-0.5B-Instruct
+export CUDA_VISIBLE_DEVICES=9
 python3 -m verl.trainer.main_generation \
     trainer.nnodes=1 \
     trainer.n_gpus_per_node=1 \

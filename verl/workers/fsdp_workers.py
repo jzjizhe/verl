@@ -72,7 +72,7 @@ from verl.utils.model import compute_position_id_with_mask
 from verl.utils.profiler import DistProfiler, DistProfilerExtension, log_gpu_memory_usage, simple_timer
 from verl.utils.profiler.performance import reduce_timing
 from verl.utils.py_functional import convert_to_regular_types
-from verl.utils.add_mlp import MLP,add_mlp
+from verl.utils.add_projector import MLP,add_mlp,add_attention_pooling,AttentionPooling
 from verl.workers.sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
 
 logger = logging.getLogger(__file__)
@@ -293,6 +293,10 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 intermediate_size=self.config.actor.mlp_intermediate_size if self.config.actor.get("mlp_intermediate_size",None) else actor_module.config.hidden_size*2
                 mlp=add_mlp(actor_module.config.hidden_size,intermediate_size)
                 actor_module.custom_mlp=mlp
+            if self.config.actor.add_attention_pooling:
+                attention_pooling=add_attention_pooling(actor_module.config.hidden_size)
+                actor_module.custom_mlp=attention_pooling
+
 
             # Apply Liger kernel to the model if use_liger is set to True
             if use_liger:
@@ -351,6 +355,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         mixed_precision = MixedPrecision(param_dtype=param_dtype, reduce_dtype=reduce_dtype, buffer_dtype=buffer_dtype)
         custom_wrap_classes=[MLP] if self.config.actor.add_mlp else None
+        custom_wrap_classes=[AttentionPooling] if self.config.actor.add_attention_pooling else None
         auto_wrap_policy = get_fsdp_wrap_policy(
             module=actor_module,
             config=fsdp_config.get("wrap_policy", None),

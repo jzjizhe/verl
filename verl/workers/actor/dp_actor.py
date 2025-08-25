@@ -901,7 +901,7 @@ class DataParallelPPOActor(BasePPOActor):
                             response_mask,
                             model_inputs["golden_answer_attention_mask"],
                             model_inputs["token_level_scores"],
-                            mlp=self.actor_module.custom_mlp if self.add_mlp else None,
+                            projector=self.actor_module.custom_mlp if (self.add_mlp or self.config.add_attention_pooling) else None,
                             align_type=self.config.get("align_type","last_token"),
                             loss_type=self.config.get("loss_type","cosine"),
                             normalize=self.config.get("norm_embeddings",False),
