@@ -138,15 +138,10 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         flip_score=1-token_level_scores.sum(-1)
         hidden_golden_loss=vicreg_h1(h1,h2,flip_score)
     elif loss_type=="attention":
-        print(token_level_scores.sum(-1))
         hidden_golden_loss=cross_attention_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,temperature=0.1)
     elif loss_type=="dtw_cosine":
-        print(token_level_scores.sum(-1))
-        # hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='cosine')
         hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='cosine')
-        # print(hidden_golden_loss)
     elif loss_type=="dtw_gpu_cosine":
-        print(token_level_scores.sum(-1))
         hidden_golden_loss=dtw_gpu_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,dist_metric='cosine')
     elif loss_type=="dtw_e":
         hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],radius=50,dist_metric='euclidean')
