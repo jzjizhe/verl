@@ -32,12 +32,12 @@ wget -nv https://github.com/flashinfer-ai/flashinfer/releases/download/v0.2.2.po
     pip install --no-cache-dir flashinfer_python-0.2.2.post1+cu124torch2.6-cp38-abi3-linux_x86_64.whl
 
 
-if [ $USE_MEGATRON -eq 1 ]; then
-    echo "4. install TransformerEngine and Megatron"
-    echo "Notice that TransformerEngine installation can take very long time, please be patient"
-    NVTE_FRAMEWORK=pytorch pip3 install --no-deps git+https://github.com/NVIDIA/TransformerEngine.git@v2.2.1
-    pip3 install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@core_v0.12.2
-fi
+# if [ $USE_MEGATRON -eq 1 ]; then
+#     echo "4. install TransformerEngine and Megatron"
+#     echo "Notice that TransformerEngine installation can take very long time, please be patient"
+#     NVTE_FRAMEWORK=pytorch pip3 install --no-deps git+https://github.com/NVIDIA/TransformerEngine.git@v2.2.1
+#     pip3 install --no-deps git+https://github.com/NVIDIA/Megatron-LM.git@core_v0.12.2
+# fi
 
 
 echo "5. May need to fix opencv"
@@ -45,10 +45,5 @@ pip install opencv-python
 pip install opencv-fixer && \
     python -c "from opencv_fixer import AutoFix; AutoFix()"
 
-
-if [ $USE_MEGATRON -eq 1 ]; then
-    echo "6. Install cudnn python package (avoid being overridden)"
-    pip install nvidia-cudnn-cu12==9.8.0.87
-fi
 
 echo "Successfully installed all packages"

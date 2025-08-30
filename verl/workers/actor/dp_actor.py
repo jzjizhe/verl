@@ -80,7 +80,6 @@ def find_special_positions(tensor, token_id, mask):
     result = torch.where(override_mask, pad_prev_pos, result)
     
     return result
-
 def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=79075):
     if align_type=="last_token":
         token_indices=mask.sum(dim=1)-1
@@ -88,8 +87,34 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
         token_indices=mask.sum(dim=1)-2
     elif align_type=="box_token":
         token_indices=find_special_positions(input_ids,token_id,mask)
+    elif align_type=="answer_pooling":
+        token_indices=find_special_positions(input_ids,token_id,mask)
+        last_token_indices=mask.sum(dim=1)-1
+        # 对其做mean pooling
+        batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
+        hidden_states_ls_indices = []
+        for hidden_states in hidden_states_ls:
+            pooled_hidden = []
+            for i in range(hidden_states.size(0)):
+                start_idx = token_indices[i] + 1
+                end_idx = last_token_indices[i]
+                if start_idx < end_idx:
+                    pooled_hidden.append(hidden_states[i, start_idx:end_idx].max(dim=0).values)
+                else:
+                    start_idx = start_idx - 10
+                    pooled_hidden.append(hidden_states[i, start_idx:end_idx].max(dim=0).values)
+            hidden_states_ls_indices.append(torch.stack(pooled_hidden, dim=0))
+        hidden_states_ls = torch.stack(hidden_states_ls_indices,dim=0).transpose(0,1)
+        return hidden_states_ls
     elif align_type=="all_token":
         return torch.stack(hidden_states_ls,dim=0).transpose(0,1)
+    elif align_type=="last_k_token":
+        token_indices=mask.sum(dim=1)-11
+        last_token_indices=mask.sum(dim=1)
+        all_token=torch.stack(hidden_states_ls,dim=0).transpose(0,1)
+        hidden_states_ls=all_token[:,:,token_indices:last_token_indices,:]
+        # import pdb;pdb.set_trace()
+        return hidden_states_ls
     else:
         raise ValueError(f"Invalid alignment type: {align_type}")
     batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
