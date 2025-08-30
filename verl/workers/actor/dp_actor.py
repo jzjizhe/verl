@@ -87,11 +87,27 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
         token_indices=mask.sum(dim=1)-2
     elif align_type=="box_token":
         token_indices=find_special_positions(input_ids,token_id,mask)
-    elif align_type=="answer_pooling":
+    elif align_type=="answer_tokens":
+        new_mask=torch.zeros_like(mask)
         token_indices=find_special_positions(input_ids,token_id,mask)
-        last_token_indices=mask.sum(dim=1)-1
-        # 对其做mean pooling
+        last_token_indices=mask.sum(dim=1)
         batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
+        for hidden_states in hidden_states_ls:
+            for i in range(hidden_states.size(0)):
+                start_idx = token_indices[i] + 1
+                end_idx = last_token_indices[i]
+                if start_idx < end_idx:
+                    new_mask[i, start_idx:end_idx]=1
+                else:
+                    start_idx = start_idx - 10
+                    new_mask[i, start_idx:end_idx]=1
+        hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
+        return hidden_states_ls,new_mask
+    elif align_type=="all_token":
+        return torch.stack(hidden_states_ls,dim=0).transpose(0,1),mask
+    elif align_type=="last_k_token":
+        token_indices=mask.sum(dim=1)-11
+        last_token_indices=mask.sum(dim=1)
         hidden_states_ls_indices = []
         for hidden_states in hidden_states_ls:
             pooled_hidden = []
@@ -99,28 +115,19 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
                 start_idx = token_indices[i] + 1
                 end_idx = last_token_indices[i]
                 if start_idx < end_idx:
-                    pooled_hidden.append(hidden_states[i, start_idx:end_idx].max(dim=0).values)
+                    pooled_hidden.append(hidden_states[i, start_idx:end_idx])
                 else:
                     start_idx = start_idx - 10
-                    pooled_hidden.append(hidden_states[i, start_idx:end_idx].max(dim=0).values)
+                    pooled_hidden.append(hidden_states[i, start_idx:end_idx])
             hidden_states_ls_indices.append(torch.stack(pooled_hidden, dim=0))
         hidden_states_ls = torch.stack(hidden_states_ls_indices,dim=0).transpose(0,1)
-        return hidden_states_ls
-    elif align_type=="all_token":
-        return torch.stack(hidden_states_ls,dim=0).transpose(0,1)
-    elif align_type=="last_k_token":
-        token_indices=mask.sum(dim=1)-11
-        last_token_indices=mask.sum(dim=1)
-        all_token=torch.stack(hidden_states_ls,dim=0).transpose(0,1)
-        hidden_states_ls=all_token[:,:,token_indices:last_token_indices,:]
-        # import pdb;pdb.set_trace()
-        return hidden_states_ls
+        return hidden_states_ls,mask
     else:
         raise ValueError(f"Invalid alignment type: {align_type}")
     batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
     hidden_states_ls = [hidden_states[batch_indices, token_indices] for hidden_states in hidden_states_ls]
     hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
-    return hidden_states_ls
+    return hidden_states_ls,mask
 
 class DataParallelPPOActor(BasePPOActor):
     def __init__(self, config, actor_module: nn.Module, actor_optimizer: torch.optim.Optimizer = None):
@@ -340,7 +347,7 @@ class DataParallelPPOActor(BasePPOActor):
                 log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
                 if output_hidden_states:
                     hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
-                    hidden_states_ls=get_token_hidden_states(hidden_states_ls,
+                    hidden_states_ls,token_mask=get_token_hidden_states(hidden_states_ls,
                     align_type=self.config.align_type,
                     mask=micro_batch["response_mask"],
                     input_ids=input_ids[:,-response_length:])
@@ -389,7 +396,10 @@ class DataParallelPPOActor(BasePPOActor):
                         for target_layer in layer_list:
                             hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
 
-            return entropy, log_probs, hidden_states_ls
+            if output_hidden_states:
+                return entropy, log_probs, hidden_states_ls,token_mask
+            else:
+                return entropy, log_probs, hidden_states_ls
 
     def _forward_micro_batch_golden_response(self, micro_batch, temperature, calculate_entropy=False, output_hidden_states=False, layer_list=None):
         """
@@ -580,7 +590,7 @@ class DataParallelPPOActor(BasePPOActor):
                 if output_hidden_states:
                     # 获取的是response 的hiden state,而不是预测next token的状态
                     hidden_states_ls=[item[:,-response_length:,:] for item in hidden_states_ls]
-                    hidden_states_ls=get_token_hidden_states(hidden_states_ls,
+                    hidden_states_ls,token_mask=get_token_hidden_states(hidden_states_ls,
                     align_type=self.config.align_type,
                     mask=micro_batch["golden_answer_attention_mask"],
                     input_ids=micro_batch["golden_answer_ids"])
@@ -623,7 +633,10 @@ class DataParallelPPOActor(BasePPOActor):
                     if layer_list is not None and len(layer_list) > 0:
                         for target_layer in layer_list:
                             hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
-            return entropy, log_probs, hidden_states_ls
+            if output_hidden_states:
+                return entropy, log_probs, hidden_states_ls,token_mask
+            else:
+                return entropy, log_probs,hidden_states_ls
 
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
@@ -862,7 +875,7 @@ class DataParallelPPOActor(BasePPOActor):
                     calculate_entropy = False
                     if entropy_coeff != 0:
                         calculate_entropy = True
-                    entropy, log_prob, hidden_states_ls = self._forward_micro_batch(
+                    entropy, log_prob, hidden_states_ls, gen_mask= self._forward_micro_batch(
                         model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
                         output_hidden_states=self.get_hidden_state,
                         layer_list=self.layer_list
@@ -907,7 +920,7 @@ class DataParallelPPOActor(BasePPOActor):
                             golden_hidden_ls=model_inputs["golden_ref_hidden_states"]
                         else:
                             with torch.no_grad():
-                                golden_entropy,golden_log_prob,golden_hidden_ls= self._forward_micro_batch_golden_response(
+                                golden_entropy,golden_log_prob,golden_hidden_ls,golden_mask= self._forward_micro_batch_golden_response(
                                     model_inputs,
                                     temperature=temperature,
                                     calculate_entropy=calculate_entropy,
@@ -923,8 +936,8 @@ class DataParallelPPOActor(BasePPOActor):
                         hidden_golden_loss = compute_golden_loss(
                             hidden_states_ls,
                             golden_hidden_ls,
-                            response_mask,
-                            model_inputs["golden_answer_attention_mask"],
+                            gen_mask,
+                            golden_mask,
                             model_inputs["token_level_scores"],
                             projector=self.actor_module.custom_mlp if (self.add_mlp or self.config.add_attention_pooling) else None,
                             align_type=self.config.get("align_type","last_token"),

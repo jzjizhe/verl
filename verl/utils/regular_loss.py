@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 import pandas as pd
 import random
+from fastdtw import fastdtw
 import numpy as np
 def off_diagonal(x):
     """获取矩阵的非对角线元素"""
@@ -81,7 +82,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     h1 = hidden_states_ls  # (bsz, layers, seq_len, hidden_dim)
     h2 = golden_hidden_ls  # (bsz, layers, seq_len, hidden_dim)
     if config.get("add_mlp",False) or config.get("add_attention_pooling",False):
-        # import pdb;pdb.set_trace()
         h1=projector(h1)
     if config.get("add_mlp_golden",False) or config.get("add_attention_pooling",False):
         with torch.no_grad():
@@ -91,9 +91,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         h2 = F.normalize(h2, dim=-1)
     if loss_type=="cosine":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
-        print(cos_sim)
-        print(token_level_scores.sum(-1))
-        import pdb;pdb.set_trace()
         hidden_golden_loss = 1 - cos_sim.mean()
     elif loss_type=="l1_wrong":
         hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
@@ -141,13 +138,18 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         flip_score=1-token_level_scores.sum(-1)
         hidden_golden_loss=vicreg_h1(h1,h2,flip_score)
     elif loss_type=="attention":
+        print(token_level_scores.sum(-1))
         hidden_golden_loss=cross_attention_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,temperature=0.1)
     elif loss_type=="dtw_cosine":
+        print(token_level_scores.sum(-1))
+        # hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='cosine')
         hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='cosine')
-        print(hidden_golden_loss)
-        # import pdb;pdb.set_trace()
+        # print(hidden_golden_loss)
+    elif loss_type=="dtw_gpu_cosine":
+        print(token_level_scores.sum(-1))
+        hidden_golden_loss=dtw_gpu_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,dist_metric='cosine')
     elif loss_type=="dtw_e":
-        hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='euclidean')
+        hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],radius=50,dist_metric='euclidean')
     else:
         raise ValueError(f"Invalid loss type: {loss_type}")
     return hidden_golden_loss
@@ -232,7 +234,7 @@ def contra_all_wrong(A, B, uids,scores, temperature=0.1):
 
 def cross_attention_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, temperature=0.1):
     """
-    支持padding和mask的交叉对齐损失函数
+    支持padding和mask的交叉对齐损失函数，使用余弦相似度损失
     
     参数:
         gen_hidden: 生成序列的hidden state，形状为[batch, gen_seq_len, dim]
@@ -248,6 +250,10 @@ def cross_attention_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None,
     """
     batch_size, gen_seq_len, dim = gen_hidden.shape
     gold_seq_len = gold_hidden.shape[1]
+    if gen_mask is None:
+        gen_mask = torch.ones(batch_size, gen_seq_len, device=gen_hidden.device)
+    if gold_mask is None:
+        gold_mask = torch.ones(batch_size, gold_seq_len, device=gold_hidden.device)
     
     # 计算注意力分数: [batch, gen_seq_len, gold_seq_len]
     attn_scores = torch.bmm(gen_hidden, gold_hidden.transpose(1, 2))  # 内积计算相似度
@@ -265,17 +271,16 @@ def cross_attention_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None,
     # 生成对齐向量: 基于注意力权重对gold_hidden进行加权求和
     aligned_gold_hidden = torch.bmm(attn_weights, gold_hidden)  # [batch, gen_seq_len, dim]
     
-    # 计算生成序列hidden state与对齐向量的MSE损失，忽略padding部分
-    # 将gen_mask扩展为[batch, gen_seq_len, 1]用于广播
-    gen_mask_expanded = gen_mask.unsqueeze(-1)  # [batch, gen_seq_len, 1]
+    # 计算生成序列hidden state与对齐向量的余弦相似度损失，忽略padding部分
+    # 计算余弦相似度
+    cos_sim = F.cosine_similarity(gen_hidden, aligned_gold_hidden, dim=-1)  # [batch, gen_seq_len]
     
     # 只计算有效token的损失
-    mse = F.mse_loss(gen_hidden, aligned_gold_hidden, reduction='none')  # [batch, gen_seq_len, dim]
-    mse = mse * gen_mask_expanded  # 屏蔽padding部分的损失
+    cos_sim = cos_sim * gen_mask  # 屏蔽padding部分的相似度
     
-    # 计算平均损失，除以有效token的数量
-    valid_count = gen_mask.sum() * dim  # 总有效元素数量
-    loss = mse.sum() / valid_count.clamp(min=1e-8)  # 避免除以0
+    # 计算平均损失，1减去余弦相似度得到损失
+    valid_count = gen_mask.sum()  # 总有效token数量
+    loss = (1 - cos_sim).sum() / valid_count.clamp(min=1e-8)  # 避免除以0
     
     return loss
 
@@ -340,24 +345,6 @@ def dtw_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None,radius=50,di
         # 提取有效序列
         gen_seq = gen_cpu[b, :gen_len]
         gold_seq = gold_cpu[b, :gold_len]
-        
-        # # 计算距离矩阵 (使用与GPU相同的度量)
-        # if self.dist_metric == 'cosine':
-        #     # CPU上的余弦距离计算
-        #     dist_matrix = 1 - cdist(
-        #         gen_seq, 
-        #         gold_seq, 
-        #         metric='cosine'
-        #     )
-        # else:
-        #     # CPU上的欧氏距离计算
-        #     dist_matrix = cdist(
-        #         gen_seq, 
-        #         gold_seq, 
-        #         metric='euclidean'
-        #     )
-        
-        # 使用FastDTW寻找最优路径
         if dist_metric == 'cosine':
             # 使用余弦距离
             def cosine_dist(a, b):
@@ -404,4 +391,80 @@ def dtw_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None,radius=50,di
         total_loss = torch.stack(losses).mean()
     else:
         total_loss = torch.zeros_like(gen_hidden, device=device).sum()
+    return total_loss
+
+def dtw_gpu_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, dist_metric='cosine'):
+    """
+    优化后的DTW损失计算，适用于最长10个token的短序列
+    
+    参数:
+        gen_hidden: 生成序列的hidden state [batch, seq_len, dim]
+        gold_hidden: 黄金序列的hidden state [batch, seq_len, dim]
+        gen_mask: 生成序列mask [batch, seq_len]
+        gold_mask: 黄金序列mask [batch, seq_len]
+        dist_metric: 距离度量方式 ('cosine' 或 'euclidean')
+        
+    返回:
+        loss: 平均DTW对齐损失
+    """
+    device = gen_hidden.device
+    batch_size, gen_seq_len, dim = gen_hidden.shape
+    _, gold_seq_len, _ = gold_hidden.shape
+    
+    # 处理mask（默认全为1）
+    if gen_mask is None:
+        gen_mask = torch.ones(batch_size, gen_seq_len, device=device)
+    if gold_mask is None:
+        gold_mask = torch.ones(batch_size, gold_seq_len, device=device)
+    
+    # 计算距离矩阵 [batch, gen_seq_len, gold_seq_len]
+    if dist_metric == 'cosine':
+        gen_norm = F.normalize(gen_hidden, p=2, dim=-1)
+        gold_norm = F.normalize(gold_hidden, p=2, dim=-1)
+        dist_matrix = 1 - torch.bmm(gen_norm, gold_norm.transpose(1, 2))  # 1 - 余弦相似度
+    else:  # 欧氏距离
+        gen_exp = gen_hidden.unsqueeze(2)  # [batch, gen_len, 1, dim]
+        gold_exp = gold_hidden.unsqueeze(1)  # [batch, 1, gold_len, dim]
+        dist_matrix = torch.sqrt(torch.sum((gen_exp - gold_exp)**2, dim=-1) + 1e-8)
+    
+    # 应用mask：将无效位置的距离设为很大的值
+    gen_mask_ = gen_mask.unsqueeze(2)  # [batch, gen_len, 1]
+    gold_mask_ = gold_mask.unsqueeze(1)  # [batch, 1, gold_len]
+    mask = gen_mask_ * gold_mask_  # [batch, gen_len, gold_len]
+    dist_matrix = dist_matrix * mask + (1 - mask) * 1e18  # 无效位置距离为极大值
+    
+    # 初始化DTW累积距离矩阵
+    dtw_matrix = torch.full((batch_size, gen_seq_len + 1, gold_seq_len + 1), 
+                           float('inf'), device=device)
+    dtw_matrix[:, 0, 0] = 0.0  # 起始点
+    
+    # 填充DTW矩阵（短序列下直接计算完整矩阵效率更高）
+    for i in range(1, gen_seq_len + 1):
+        for j in range(1, gold_seq_len + 1):
+            # 取左、上、左上三个方向的最小值
+            min_prev = torch.min(torch.stack([
+                dtw_matrix[:, i-1, j],    # 上
+                dtw_matrix[:, i, j-1],    # 左
+                dtw_matrix[:, i-1, j-1]   # 左上
+            ], dim=1), dim=1)[0]
+            
+            # 当前位置的累积距离
+            dtw_matrix[:, i, j] = dist_matrix[:, i-1, j-1] + min_prev
+    
+    # 计算有效序列长度
+    gen_lengths = gen_mask.sum(dim=1).long()
+    gold_lengths = gold_mask.sum(dim=1).long()
+    
+    # 收集每个样本的最终DTW距离（根据有效长度）
+    batch_indices = torch.arange(batch_size, device=device)
+    final_distances = dtw_matrix[batch_indices, gen_lengths, gold_lengths]
+    
+    # 计算平均损失（过滤掉无效样本）
+    valid_mask = (gen_lengths > 0) & (gold_lengths > 0)
+    if valid_mask.any():
+        total_loss = final_distances[valid_mask].mean()
+    else:
+        total_loss = torch.zeros_like(gen_hidden, device=device).sum()
+     
+    
     return total_loss
