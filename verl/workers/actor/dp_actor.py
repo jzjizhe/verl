@@ -182,6 +182,7 @@ class DataParallelPPOActor(BasePPOActor):
             log_probs: # (bs, response_len)
             hidden_states: # (bs, response_len, hidden_size) or None, 如果layer_list不为空，返回layer_list[0]对应的层
         """
+        token_mask=None
         response_length = micro_batch["responses"].size(-1)
         multi_modal_inputs = {}
         if "multi_modal_inputs" in micro_batch.keys():
@@ -396,10 +397,7 @@ class DataParallelPPOActor(BasePPOActor):
                         for target_layer in layer_list:
                             hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
 
-            if output_hidden_states:
-                return entropy, log_probs, hidden_states_ls,token_mask
-            else:
-                return entropy, log_probs, hidden_states_ls
+            return entropy, log_probs, hidden_states_ls,token_mask
 
     def _forward_micro_batch_golden_response(self, micro_batch, temperature, calculate_entropy=False, output_hidden_states=False, layer_list=None):
         """
@@ -408,6 +406,7 @@ class DataParallelPPOActor(BasePPOActor):
             log_probs: # (bs, response_len)
             hidden_states: # (bs, response_len, hidden_size) or None, 如果layer_list不为空，返回layer_list[0]对应的层
         """
+        token_mask=None
         response_length = micro_batch["golden_answer_ids"].size(-1)
         # mirco_batch["input_ids"]中包含prompt和model rollout的结果，需要将prompt单独拿出来与 golden response合并
         prompt_length = micro_batch["input_ids"].size(1)-micro_batch['responses'].size(1)
@@ -633,10 +632,7 @@ class DataParallelPPOActor(BasePPOActor):
                     if layer_list is not None and len(layer_list) > 0:
                         for target_layer in layer_list:
                             hidden_states_ls.append(output.hidden_states[target_layer][:, -response_length:, :])  # (bsz, response_length, hidden_size)
-            if output_hidden_states:
-                return entropy, log_probs, hidden_states_ls,token_mask
-            else:
-                return entropy, log_probs,hidden_states_ls
+            return entropy, log_probs, hidden_states_ls,token_mask
 
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
