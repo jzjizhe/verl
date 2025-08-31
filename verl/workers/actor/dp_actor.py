@@ -103,25 +103,24 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
                     new_mask[i, start_idx:end_idx]=1
         hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
         return hidden_states_ls,new_mask
-    elif align_type=="all_token":
-        return torch.stack(hidden_states_ls,dim=0).transpose(0,1),mask
     elif align_type=="last_k_token":
         token_indices=mask.sum(dim=1)-11
         last_token_indices=mask.sum(dim=1)
-        hidden_states_ls_indices = []
+        new_mask=torch.zeros_like(mask)
+        batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
         for hidden_states in hidden_states_ls:
-            pooled_hidden = []
             for i in range(hidden_states.size(0)):
                 start_idx = token_indices[i] + 1
                 end_idx = last_token_indices[i]
                 if start_idx < end_idx:
-                    pooled_hidden.append(hidden_states[i, start_idx:end_idx])
+                    new_mask[i, start_idx:end_idx]=1
                 else:
                     start_idx = start_idx - 10
-                    pooled_hidden.append(hidden_states[i, start_idx:end_idx])
-            hidden_states_ls_indices.append(torch.stack(pooled_hidden, dim=0))
-        hidden_states_ls = torch.stack(hidden_states_ls_indices,dim=0).transpose(0,1)
-        return hidden_states_ls,mask
+                    new_mask[i, start_idx:end_idx]=1
+        hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
+        return hidden_states_ls,new_mask
+    elif align_type=="all_token":
+        return torch.stack(hidden_states_ls,dim=0).transpose(0,1),mask
     else:
         raise ValueError(f"Invalid alignment type: {align_type}")
     batch_indices = torch.arange(hidden_states_ls[0].size(0), device=hidden_states_ls[0].device)
