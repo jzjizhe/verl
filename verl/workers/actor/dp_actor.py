@@ -694,7 +694,7 @@ class DataParallelPPOActor(BasePPOActor):
         for micro_batch in micro_batches:
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                entropy, log_probs,_ = self._forward_micro_batch(
+                entropy, log_probs,_,_ = self._forward_micro_batch(
                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy
                 )
             log_probs_lst.append(log_probs)
@@ -755,7 +755,7 @@ class DataParallelPPOActor(BasePPOActor):
         for micro_batch in micro_batches:
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                entropy, log_probs,hidden_states_ls = self._forward_micro_batch_golden_response(
+                entropy, log_probs,hidden_states_ls,golden_mask = self._forward_micro_batch_golden_response(
                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
                     output_hidden_states=True,
                     layer_list=self.layer_list
