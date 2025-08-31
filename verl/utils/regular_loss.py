@@ -82,10 +82,10 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     h1 = hidden_states_ls  # (bsz, layers, seq_len, hidden_dim)
     h2 = golden_hidden_ls  # (bsz, layers, seq_len, hidden_dim)
     if config.get("add_mlp",False) or config.get("add_attention_pooling",False):
-        h1=projector(h1)
+        h1=projector(h1[:,0,:,:])
     if config.get("add_mlp_golden",False) or config.get("add_attention_pooling",False):
         with torch.no_grad():
-            h2=projector(h2)
+            h2=projector(h2[:,0,:,:])
     if normalize:
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
