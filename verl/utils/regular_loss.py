@@ -91,9 +91,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
         h2 = F.normalize(h2, dim=-1)
     if loss_type=="cosine":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
-        print(cos_sim.mean(dim=-1))
-        print(token_level_scores.sum(-1))
-        import pdb;pdb.set_trace()
         hidden_golden_loss = 1 - cos_sim.mean()
     elif loss_type=="l1_wrong":
         hidden_golden_loss = F.l1_loss(h1, h2,reduction="none")
