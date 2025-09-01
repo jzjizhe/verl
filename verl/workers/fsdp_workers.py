@@ -292,9 +292,11 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             if self.config.actor.add_mlp:
                 intermediate_size=self.config.actor.mlp_intermediate_size if self.config.actor.get("mlp_intermediate_size",None) else actor_module.config.hidden_size*2
                 mlp=add_mlp(actor_module.config.hidden_size,intermediate_size)
+                mlp = mlp.to(torch_dtype)  # 确保 projector 使用正确的数据类型
                 actor_module.custom_mlp=mlp
             if self.config.actor.add_attention_pooling:
                 attention_pooling=add_attention_pooling(actor_module.config.hidden_size)
+                attention_pooling = attention_pooling.to(torch_dtype)  # 确保 projector 使用正确的数据类型
                 actor_module.custom_mlp=attention_pooling
 
 
@@ -361,7 +363,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             config=fsdp_config.get("wrap_policy", None),
             is_lora=self.config.model.get("lora_rank", 0) > 0,
             custom_wrap_classes=custom_wrap_classes
-
         )
 
         if self._is_rollout and self.config.rollout.name == "hf":
