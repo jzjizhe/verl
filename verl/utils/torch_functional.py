@@ -361,6 +361,8 @@ def postprocess_data(
             attention_mask, max_seq_len=max_length, pad_token_id=0, left_pad=left_pad
         )
     elif sequence_length > max_length:
+        print("--------------------------------------------------------------")
+        print(f"sequence_length: {sequence_length}, max_length: {max_length}")
         if truncation == "left":
             # actually, left truncation may not be reasonable
             input_ids = input_ids[:, -max_length:]

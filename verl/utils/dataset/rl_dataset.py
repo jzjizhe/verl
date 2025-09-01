@@ -117,6 +117,7 @@ class RLHFDataset(Dataset):
         self.serialize_dataset = False
         self.return_multi_modal_inputs = config.get("return_multi_modal_inputs", True)
         self.tokenizer_golden_answer = config.get("tokenizer_golden_answer", False)
+        self.max_golden_response_length = config.get("max_golden_response_length", 1024)
         self._download()
         self._read_files_and_tokenize()
 
@@ -225,7 +226,7 @@ class RLHFDataset(Dataset):
             golden_answer_input_ids, golden_answer_attention_mask = verl_F.postprocess_data(
                 input_ids=golden_answer_input_ids,
                 attention_mask=golden_answer_attention_mask,
-                max_length=self.max_prompt_length,
+                max_length=self.max_golden_response_length,
                 pad_token_id=self.tokenizer.pad_token_id,
                 left_pad=False,
                 truncation='right',

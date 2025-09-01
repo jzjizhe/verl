@@ -868,20 +868,21 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         data.meta_info["use_dynamic_bsz"] = self.config.ref.log_prob_use_dynamic_bsz
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
-            hidden_states= self.ref_policy.compute_golden_hidden_states(data=data, calculate_entropy=False)
-            # output = DataProto.from_dict(tensors={"ref_log_prob": output})
-            # output = self.ulysses_sharding_manager.postprocess_data(output)
+            hidden_states,ref_golden_answer_mask= self.ref_policy.compute_golden_hidden_states(data=data, calculate_entropy=False)
             hidden_states=DataProto.from_dict(tensors={"golden_ref_hidden_states": hidden_states})
+            ref_golden_answer_mask=DataProto.from_dict(tensors={"ref_golden_answer_mask": ref_golden_answer_mask})
 
-        # output = output.to("cpu")
         hidden_states=hidden_states.to("cpu")
+        ref_golden_answer_mask=ref_golden_answer_mask.to("cpu")
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
         if self.world_size > 1 and fsdp_version(self.ref_policy.actor_module) == 1:
             self.ref_policy.actor_module._handle.reshard(True)
 
-        return hidden_states
+        # 合并两个DataProto对象为一个
+        combined_data = hidden_states.union(ref_golden_answer_mask)
+        return combined_data
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None):

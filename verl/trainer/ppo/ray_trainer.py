@@ -1267,10 +1267,15 @@ class RayPPOTrainer:
                     if self.use_reference_policy and self.config.actor_rollout_ref.actor.golden_from=="ref":
                         with marked_timer("ref_golden_hidden_states", timing_raw, color="olive"):
                             if not self.ref_in_actor:
-                                ref_golden_hidden_states = self.ref_policy_wg.compute_ref_golden_hidden_states(batch)
+                                combined_data = self.ref_policy_wg.compute_ref_golden_hidden_states(batch)
+                                ref_golden_hidden_states = DataProto.from_dict(tensors={"golden_ref_hidden_states": combined_data.batch["golden_ref_hidden_states"]})
+                                golden_answer_mask = DataProto.from_dict(tensors={"ref_golden_answer_mask": combined_data.batch["ref_golden_answer_mask"]})
                             else:
-                                ref_golden_hidden_states = self.actor_rollout_wg.compute_golden_hidden_states(batch)
+                                combined_data = self.actor_rollout_wg.compute_golden_hidden_states(batch)
+                                ref_golden_hidden_states = DataProto.from_dict(tensors={"golden_ref_hidden_states": combined_data.batch["golden_ref_hidden_states"]})
+                                golden_answer_mask = DataProto.from_dict(tensors={"ref_golden_answer_mask": combined_data.batch["ref_golden_answer_mask"]})
                             batch = batch.union(ref_golden_hidden_states)
+                            batch = batch.union(golden_answer_mask)
 
                     # compute values
                     if self.use_critic:

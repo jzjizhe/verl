@@ -109,3 +109,6 @@ datagen:
   name: null
 
 tokenizer_golden_answer: False
+
+# Maximum golden response length.
+max_golden_response_length: 1024

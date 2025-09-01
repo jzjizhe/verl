@@ -407,7 +407,6 @@ class DataParallelPPOActor(BasePPOActor):
         """
         token_mask=None
         response_length = micro_batch["golden_answer_ids"].size(-1)
-        # mirco_batch["input_ids"]中包含prompt和model rollout的结果，需要将prompt单独拿出来与 golden response合并
         prompt_length = micro_batch["input_ids"].size(1)-micro_batch['responses'].size(1)
         input_ids = micro_batch["input_ids"][:,0:prompt_length]
         attention_mask = micro_batch["attention_mask"][:,0:prompt_length]
@@ -751,35 +750,33 @@ class DataParallelPPOActor(BasePPOActor):
         # log_probs_lst = []
         # entropy_lst = []
         hidden_states_lst = []
+        ref_golden_answer_mask_lst = []
         for micro_batch in micro_batches:
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                entropy, log_probs,hidden_states_ls,golden_mask = self._forward_micro_batch_golden_response(
+                entropy, log_probs,hidden_states_ls,ref_golden_answer_mask = self._forward_micro_batch_golden_response(
                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
                     output_hidden_states=True,
                     layer_list=self.layer_list
                 )
-            # log_probs_lst.append(log_probs)
-            # if calculate_entropy:
-                # entropy_lst.append(entropy)
             h=hidden_states_ls
             # last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
             # golden_batch_indices = torch.arange(h.size(0), device=h.device)
             # h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
             hidden_states_lst.append(h)
+            ref_golden_answer_mask_lst.append(ref_golden_answer_mask)
         # log_probs = torch.concat(log_probs_lst, dim=0)
         hidden_states = torch.concat(hidden_states_lst, dim=0)
+        ref_golden_answer_mask = torch.concat(ref_golden_answer_mask_lst, dim=0)
         # entropys = None
         # if calculate_entropy:
             # entropys = torch.concat(entropy_lst, dim=0)
 
         if use_dynamic_bsz:
             hidden_states = restore_dynamic_batch(hidden_states, batch_idx_list)
-            # log_probs = restore_dynamic_batch(log_probs, batch_idx_list)
-            # if calculate_entropy:
-                # entropys = restore_dynamic_batch(entropys, batch_idx_list)
+            ref_golden_answer_mask = restore_dynamic_batch(ref_golden_answer_mask, batch_idx_list)
 
-        return hidden_states
+        return hidden_states,ref_golden_answer_mask
 
     def golden_loss_weight_schedule(self,step,loss_weight,total_steps,scheduler_type="cosine"):
         step-=1 # 0-indexed
@@ -824,7 +821,7 @@ class DataParallelPPOActor(BasePPOActor):
             golden_loss_weight = self.golden_loss_weight_schedule(step,self.golden_loss_weight,total_steps,scheduler_type=self.config.get("golden_loss_scheduler_type","constant"))
         if self.config.golden_from=="ref":
             select_keys.append("golden_ref_hidden_states")
-
+            select_keys.append("ref_golden_answer_mask")
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
         non_tensor_select_keys.append("uid")
@@ -913,6 +910,7 @@ class DataParallelPPOActor(BasePPOActor):
                     if self.use_golden_loss:
                         if self.config.golden_from=="ref":
                             golden_hidden_ls=model_inputs["golden_ref_hidden_states"]
+                            golden_mask=model_inputs["ref_golden_answer_mask"]
                         else:
                             with torch.no_grad():
                                 golden_entropy,golden_log_prob,golden_hidden_ls,golden_mask= self._forward_micro_batch_golden_response(
