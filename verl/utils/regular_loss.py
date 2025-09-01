@@ -269,14 +269,10 @@ def cross_attention_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None,
     # 计算生成序列hidden state与对齐向量的余弦相似度损失，忽略padding部分
     # 计算余弦相似度
     cos_sim = F.cosine_similarity(gen_hidden, aligned_gold_hidden, dim=-1)  # [batch, gen_seq_len]
-    
-    # 只计算有效token的损失
-    cos_sim = cos_sim * gen_mask  # 屏蔽padding部分的相似度
-    
-    # 计算平均损失，1减去余弦相似度得到损失
-    valid_count = gen_mask.sum()  # 总有效token数量
-    loss = (1 - cos_sim).sum() / valid_count.clamp(min=1e-8)  # 避免除以0
-    
+    loss_per_token = (1 - cos_sim) * gen_mask  # [batch, gen_seq_len]
+    per_sample_valid_count = gen_mask.sum(dim=1)  # 每个样本的有效token数量 [batch]
+    per_sample_loss = loss_per_token.sum(dim=1) / per_sample_valid_count.clamp(min=1e-8)  # 每个样本的平均损失 [batch]
+    loss = per_sample_loss.mean()
     return loss
 
 
