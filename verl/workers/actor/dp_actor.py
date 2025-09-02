@@ -813,7 +813,8 @@ class DataParallelPPOActor(BasePPOActor):
             "token_level_scores",
         ]
         if self.config.use_kl_loss:
-            select_keys.append("ref_log_prob")
+            pass
+            # select_keys.append("ref_log_prob")
         if self.use_golden_loss:
             step = data.meta_info["step"]
             total_steps = data.meta_info["total_steps"]
@@ -944,16 +945,16 @@ class DataParallelPPOActor(BasePPOActor):
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()
                         metrics["actor/hidden_golden_weight"] = golden_loss_weight
                     if self.config.use_kl_loss:
-                        ref_log_prob = model_inputs["ref_log_prob"]
-                        # compute kl loss
-                        kld = kl_penalty(
-                            logprob=log_prob, ref_logprob=ref_log_prob, kl_penalty=self.config.kl_loss_type
-                        )
-                        kl_loss = agg_loss(loss_mat=kld, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
+                        pass
+                        # ref_log_prob = model_inputs["ref_log_prob"]
+                        # kld = kl_penalty(
+                        #     logprob=log_prob, ref_logprob=ref_log_prob, kl_penalty=self.config.kl_loss_type
+                        # )
+                        # kl_loss = agg_loss(loss_mat=kld, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
 
-                        policy_loss = policy_loss + kl_loss * self.config.kl_loss_coef
-                        micro_batch_metrics["actor/kl_loss"] = kl_loss.detach().item()
-                        micro_batch_metrics["actor/kl_coef"] = self.config.kl_loss_coef
+                        # policy_loss = policy_loss + kl_loss * self.config.kl_loss_coef
+                        # micro_batch_metrics["actor/kl_loss"] = kl_loss.detach().item()
+                        # micro_batch_metrics["actor/kl_coef"] = self.config.kl_loss_coef
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
                         loss = policy_loss * (response_mask.shape[0] / self.config.ppo_mini_batch_size)
