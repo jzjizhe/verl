@@ -822,6 +822,7 @@ class DataParallelPPOActor(BasePPOActor):
             golden_loss_weight = self.golden_loss_weight_schedule(step,self.golden_loss_weight,total_steps,scheduler_type=self.config.get("golden_loss_scheduler_type","constant"))
         if self.config.golden_from=="ref":
             select_keys.append("golden_ref_hidden_states")
+            select_keys.append("ref_golden_answer_mask")
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
         non_tensor_select_keys.append("uid")
@@ -910,7 +911,8 @@ class DataParallelPPOActor(BasePPOActor):
                     if self.use_golden_loss:
                         if self.config.golden_from=="ref":
                             golden_hidden_ls=model_inputs["golden_ref_hidden_states"]
-                            golden_mask=model_inputs["golden_answer_attention_mask"]
+                            # golden_mask=model_inputs["golden_answer_attention_mask"]
+                            golden_mask=model_inputs["ref_golden_answer_mask"]
                         else:
                             with torch.no_grad():
                                 golden_entropy,golden_log_prob,golden_hidden_ls,golden_mask= self._forward_micro_batch_golden_response(
