@@ -93,6 +93,10 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     if normalize:
         h1 = F.normalize(h1, dim=-1)
         h2 = F.normalize(h2, dim=-1)
+    if len(h1.shape)==4:
+        h1=h1[:,0,:,:]
+    if len(h2.shape)==4:
+        h2=h2[:,0,:,:]
     if loss_type=="cosine":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1)
         hidden_golden_loss = 1 - cos_sim.mean()
@@ -144,7 +148,8 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="attention":
         hidden_golden_loss=cross_attention_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,temperature=0.1)
     elif loss_type=="dtw_cosine":
-        hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='cosine')
+        # hidden_golden_loss=dtw_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,radius=50,dist_metric='cosine')
+        hidden_golden_loss=dtw_loss(h1,h2,hidden_mask,golden_mask,radius=50,dist_metric='cosine')
     elif loss_type=="dtw_gpu_cosine":
         hidden_golden_loss=dtw_gpu_loss(h1[:,0,:,:],h2[:,0,:,:],hidden_mask,golden_mask,dist_metric='cosine')
     elif loss_type=="dtw_e":
