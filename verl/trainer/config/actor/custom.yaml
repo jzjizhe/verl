@@ -13,3 +13,4 @@ golden_loss_scheduler_type: constant
 align_type: last_token
 loss_type: cosine
 golden_from: None
+use_repa_in_reward: False

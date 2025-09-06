@@ -800,11 +800,20 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
             with adapter_ctx:
-                output, entropys = self.actor.compute_log_prob(data=data, calculate_entropy=True)
-            output = DataProto.from_dict(
-                tensors={"old_log_probs": output, "entropys": entropys},
-                meta_info={"temperature": self.config.rollout.temperature},
-            )
+                output, entropys,actor_hidden_states,actor_answer_mask = self.actor.compute_log_prob(data=data, calculate_entropy=True,
+                get_hidden_state=self.config.actor.use_repa_in_reward)
+            if self.config.actor.use_repa_in_reward:
+                output = DataProto.from_dict(
+                    tensors={"old_log_probs": output, "entropys": entropys,
+                    "actor_hidden_states":actor_hidden_states,
+                    "actor_answer_mask":actor_answer_mask},
+                    meta_info={"temperature": self.config.rollout.temperature},
+                )
+            else:
+                output = DataProto.from_dict(
+                    tensors={"old_log_probs": output, "entropys": entropys},
+                    meta_info={"temperature": self.config.rollout.temperature},
+                )
             output = self.ulysses_sharding_manager.postprocess_data(output)
 
         output = output.to("cpu")
@@ -817,7 +826,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         if self._is_offload_param:
             offload_fsdp_model_to_cpu(self.actor_module_fsdp)
             log_gpu_memory_usage("After offload actor model during compute_log_prob", logger=logger)
-
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -866,9 +874,6 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             data = DataProto.from_dict(tensors={"ref_log_prob": data.batch["old_log_probs"]})
             return data
         assert self._is_ref
-        # else:
-        # otherwise, the class have a standalone ref model
-        # Support all hardwares
         data = data.to(get_device_id())
         micro_batch_size = self.config.ref.log_prob_micro_batch_size_per_gpu
         data.meta_info["micro_batch_size"] = micro_batch_size
@@ -892,6 +897,42 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
         # 合并两个DataProto对象为一个
         combined_data = hidden_states.union(ref_golden_answer_mask)
         return combined_data
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    @DistProfiler.annotate(color="olive", role="actor_compute_log_prob")
+    def compute_acotr_golden_hidden_states(self, data: DataProto):
+        assert self._is_actor
+        if self._is_offload_param:
+            load_fsdp_model_to_gpu(self.actor_module_fsdp)
+        from contextlib import nullcontext
+        is_lora = data.meta_info.pop("is_lora",False)
+        adapter_ctx = self.actor.actor_module.disable_adapter() if is_lora else nullcontext()
+        data = data.to(get_device_id())
+        # we should always recompute old_log_probs when it is HybridEngine
+        data.meta_info["micro_batch_size"] = self.config.rollout.log_prob_micro_batch_size_per_gpu
+        data.meta_info["max_token_len"] = self.config.rollout.log_prob_max_token_len_per_gpu
+        data.meta_info["use_dynamic_bsz"] = self.config.rollout.log_prob_use_dynamic_bsz
+        data.meta_info["temperature"] = self.config.rollout.temperature
+        with self.ulysses_sharding_manager:
+            data = self.ulysses_sharding_manager.preprocess_data(data)
+            with adapter_ctx:
+                hidden_states,golden_answer_mask=self.actor.compute_golden_hidden_states(data=data,calculate_entropy=False)
+            output = DataProto.from_dict(
+                tensors={"actor_golden_hidden_states": hidden_states, "actor_golden_answer_mask": golden_answer_mask},
+                # meta_info={"temperature": self.config.rollout.temperature},
+            )
+            output = self.ulysses_sharding_manager.postprocess_data(output)
+
+        output = output.to("cpu")
+        # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+        # unshard the root FSDP module
+        if self.world_size > 1 and fsdp_version(self.actor.actor_module) == 1:
+            self.actor.actor_module._handle.reshard(True)
+
+        if self._is_offload_param:
+            offload_fsdp_model_to_cpu(self.actor_module_fsdp)
+            log_gpu_memory_usage("After offload actor model during compute_actor_golden_hidde_states", logger=logger)
+
+        return output
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def save_checkpoint(self, local_path, hdfs_path=None, global_step=0, max_ckpt_to_keep=None):

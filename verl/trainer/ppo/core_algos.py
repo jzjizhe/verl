@@ -250,6 +250,8 @@ def compute_grpo_outcome_advantage(
     epsilon: float = 1e-6,
     norm_adv_by_std_in_grpo: bool = True,
     config: Optional[AlgoConfig] = None,
+    repa_reward=None,
+    repa_reward_weight=0
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute advantage for GRPO, operating only on Outcome reward
@@ -280,7 +282,8 @@ def compute_grpo_outcome_advantage(
             shape is (bs, response_length)
     """
     scores = token_level_rewards.sum(dim=-1)
-
+    if repa_reward is not None:
+        scores=scores+repa_reward_weight*repa_reward
     id2score = defaultdict(list)
     id2mean = {}
     id2std = {}

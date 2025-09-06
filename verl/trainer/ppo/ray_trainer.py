@@ -60,6 +60,9 @@ from verl.utils.metric import (
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
+# from verl.utils
+from verl.workers.actor.dp_actor import get_token_hidden_states
+from verl.utils.regular_loss import compute_repa_reward
 
 WorkerType = type[Worker]
 
@@ -219,6 +222,8 @@ def compute_advantage(
     num_repeat: int = 1,
     norm_adv_by_std_in_grpo: bool = True,
     config: Optional[AlgoConfig] = None,
+    repa_reward=None,
+    repa_reward_weight=0
 ) -> DataProto:
     """Compute advantage estimates for policy optimization.
 
@@ -268,6 +273,8 @@ def compute_advantage(
             response_mask=grpo_calculation_mask,
             index=data.non_tensor_batch["uid"],
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+            repa_reward=repa_reward,
+            repa_reward_weight=repa_reward_weight
         )
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
@@ -1278,6 +1285,15 @@ class RayPPOTrainer:
                             batch = batch.union(ref_golden_hidden_states)
                             batch = batch.union(golden_answer_mask)
                             # batch.batch["golden_answer_attention_mask"] = combined_data.batch["ref_golden_answer_mask"]
+                    if self.config.actor_rollout_ref.actor.use_repa_in_reward:
+                        with marked_timer("use_repa_in_reward", timing_raw, color="olive"):
+                            combined_golden = self.actor_rollout_wg.compute_acotr_golden_hidden_states(batch)
+                            # combined_golden = self.actor_rollout_wg.compute_actor_golden_hidden_states(batch) # golden
+                            # combined_generated = self.actor_rollout_wg.compute_hidden_states(batch) # generated
+                            # ref_golden_hidden_states = DataProto.from_dict(tensors={"golden_ref_hidden_states": combined_data.batch["golden_ref_hidden_states"]})
+                            # golden_answer_mask = DataProto.from_dict(tensors={"ref_golden_answer_mask": combined_data.batch["ref_golden_answer_mask"]})
+                            batch = batch.union(combined_golden)
+                            # batch = batch.union(golden_answer_mask)
                     # compute values
                     if self.use_critic:
                         with marked_timer("values", timing_raw, color="cyan"):
@@ -1303,6 +1319,22 @@ class RayPPOTrainer:
                         else:
                             batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
 
+                        if self.config.actor_rollout_ref.actor.use_repa_in_reward:
+                            align_reward=compute_repa_reward(hidden_states_ls=batch.batch['actor_hidden_states'], 
+                            golden_hidden_ls=batch.batch['actor_golden_hidden_states'], 
+                            hidden_mask=batch.batch['actor_answer_mask'], 
+                            golden_mask=batch.batch['actor_golden_answer_mask'],
+                            token_level_scores=batch.batch['token_level_scores'],
+                            projector=None,
+                            align_type=self.config.actor_rollout_ref.actor.align_type,
+                            loss_type=self.config.actor_rollout_ref.actor.loss_type,
+                            normalize=self.config.actor_rollout_ref.actor.norm_embeddings,
+                            uid=None,
+                            config=self.config.actor_rollout_ref.actor)
+                            metrics.update({"actor/repa_reward":align_reward.mean().detach().item()})
+                        else:
+                            align_reward=None
+
                         # compute advantages, executed on the driver process
 
                         norm_adv_by_std_in_grpo = self.config.algorithm.get(
@@ -1317,6 +1349,8 @@ class RayPPOTrainer:
                             num_repeat=self.config.actor_rollout_ref.rollout.n,
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
                             config=self.config.algorithm,
+                            repa_reward=align_reward,
+                            repa_reward_weight=self.config.actor_rollout_ref.actor.golden_loss_weight
                         )
 
                     # update critic
