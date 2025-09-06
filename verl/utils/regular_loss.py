@@ -682,6 +682,7 @@ def dtw_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, radius=50, 
     Returns:
         total_loss: scalar tensor
     """
+
     device = gen_hidden.device
     batch_size, seq_len, dim = gen_hidden.shape
 
@@ -720,7 +721,8 @@ def dtw_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, radius=50, 
         gold_idx_valid = np.where(gold_mask_cpu[b])[0]
 
         if len(gen_idx_valid) == 0 or len(gold_idx_valid) == 0:
-            losses.append(torch.tensor(0.0, device=device))
+            losses.append(torch.zeros_like(gen_hidden,device=device).sum())
+            # losses.append(torch.tensor(0.0, device=device))
             continue
 
         gen_seq = gen_cpu[b, gen_idx_valid]
@@ -747,7 +749,6 @@ def dtw_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, radius=50, 
 
         path_distances = full_distance_matrix[b, gen_path_idx, gold_path_idx]
         losses.append(path_distances.mean())
-
     total_loss = torch.stack(losses).mean() if losses else torch.zeros_like(gen_hidden, device=device).sum()
     return total_loss
 
