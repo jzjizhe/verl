@@ -50,7 +50,13 @@ def main():
         # file_path="/data0/jzzhang/verl/datasets/NuminaMath-CoT/data/train-00003-of-00005.parquet" # 171k
         # file_path="/data0/jzzhang/verl/datasets/NuminaMath-CoT/data/train-00004-of-00005.parquet" # 171k
         # file_path="/data0/jzzhang/verl/datasets/NuminaMath-CoT/data/test-00000-of-00001.parquet" # 100
-        file_path="/data0/jzzhang/verl/datasets/NuminaMath-CoT/NuminaMath171k_test_math_format.parquet"
+        # file_path="/data0/jzzhang/verl/datasets/NuminaMath-CoT/NuminaMath171k_test_math_format.parquet"
+        # file_path="/data0/jzzhang/verl/datasets/NuminaMath-CoT/NuminaMath171k_SFT_math_format.parquet"
+        # file_path="/data0/jzzhang/verl/datasets/aime25/aime2025_math_format_repeat3.parquet"
+        # file_path="/data0/jzzhang/verl/datasets/aime24/aime2024_math_format_repeat3.parquet"
+        # file_path="/data0/jzzhang/verl/datasets/amc/amc_math_format_repeat3.parquet"
+        # file_path="/data0/jzzhang/verl/datasets/amc/data/train-00000-of-00001.parquet"
+        file_path="/data0/jzzhang/verl/datasets/aime25_yentinglin/data/train-00000-of-00001-243207c6c994e1bd.parquet"
     
     if not os.path.exists(file_path):
         print(f"文件不存在: {file_path}")

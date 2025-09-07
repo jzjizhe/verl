@@ -128,6 +128,7 @@ outputs
 
 # custom
 examples/grpo_trainer/
+examples/sft/
 examples/generation/
 merge_model.sh
 remove_train_state.sh

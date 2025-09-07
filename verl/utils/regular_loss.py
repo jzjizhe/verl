@@ -580,7 +580,6 @@ def cross_attention_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None,
 #         total_loss = torch.zeros_like(gen_hidden, device=device)
 #     return total_loss
 
-
 def dtw_reward(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, radius=50, dist_metric='cosine'):
     """
     DTW loss with support for arbitrary padding locations.
@@ -611,11 +610,13 @@ def dtw_reward(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, radius=50
 
     # 计算距离矩阵
     if dist_metric == 'cosine':
-        gen_norm = F.normalize(gen_hidden, p=2, dim=-1)
-        gold_norm = F.normalize(gold_hidden, p=2, dim=-1)
-        cos_sim = torch.bmm(gen_norm, gold_norm.transpose(1, 2))
-        # full_distance_matrix = 1 - cos_sim
-        full_distance_matrix = (cos_sim+1)/2
+        with torch.no_grad():
+            gen_norm = F.normalize(gen_hidden, p=2, dim=-1)
+            gold_norm = F.normalize(gold_hidden, p=2, dim=-1)
+            cos_sim = torch.bmm(gen_norm, gold_norm.transpose(1, 2))
+            # full_distance_matrix = 1 - cos_sim
+            full_distance_matrix = cos_sim
+        # full_distance_matrix = (cos_sim+1)/2
     else:  # euclidean
         gen_exp = gen_hidden.unsqueeze(2)  # [B, L, 1, D]
         gold_exp = gold_hidden.unsqueeze(1)  # [B, 1, L, D]
@@ -751,4 +752,8 @@ def dtw_loss(gen_hidden, gold_hidden, gen_mask=None, gold_mask=None, radius=50, 
         losses.append(path_distances.mean())
     total_loss = torch.stack(losses).mean() if losses else torch.zeros_like(gen_hidden, device=device).sum()
     return total_loss
+
+
+
+
 
