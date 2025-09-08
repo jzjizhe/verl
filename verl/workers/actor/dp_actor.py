@@ -166,6 +166,7 @@ class DataParallelPPOActor(BasePPOActor):
         self.layer_list = self.config.get("layer_list", None)  # 新增layer_list参数
         # add mlp
         self.add_mlp=self.config.get("add_mlp",False)
+        self.hidden_state_size=self.config.get("hidden_state_size",0)
         self.device_name = get_device_name()
         if self.use_golden_loss:
             rank_zero_print("use golden loss")
@@ -649,7 +650,6 @@ class DataParallelPPOActor(BasePPOActor):
         else:
             self.actor_optimizer.step()
         return grad_norm
-
     @GPUMemoryLogger(role="dp actor", logger=logger)
     def compute_log_prob(self, data: DataProto, calculate_entropy=False,get_hidden_state=False) -> torch.Tensor:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
@@ -671,9 +671,8 @@ class DataParallelPPOActor(BasePPOActor):
         """
         # set to eval
         self.actor_module.eval()
-
         micro_batch_size = data.meta_info["micro_batch_size"]
-        temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+        temperature = data.meta_info["temperature"]
         use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         select_keys = ["responses", "input_ids", "attention_mask", "position_ids",'response_mask']
@@ -689,28 +688,46 @@ class DataParallelPPOActor(BasePPOActor):
 
         log_probs_lst = []
         entropy_lst = []
-        hidden_states_lst=[]
-        answer_mask_lst=[]
+
+        # 计算总 batch size 用于预分配
+        total_batch_size = sum(mb.batch['response_mask'].size(0) for mb in micro_batches)
+        device = micro_batches[0].batch['response_mask'].device
+        if get_hidden_state:
+            max_seq_len = max(mb.batch['response_mask'].size(1) for mb in micro_batches)
+            hidden_states = torch.empty(
+                (total_batch_size, len(self.layer_list), max_seq_len, self.hidden_state_size),
+                device=device,
+                dtype=torch.bfloat16
+            )
+            answer_mask = torch.empty(
+                (total_batch_size, max_seq_len),
+                device=device,
+                dtype=torch.int64
+            )
+        else:
+            hidden_states=None 
+            answer_mask=None
+
+        start_idx = 0
         for micro_batch in micro_batches:
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                entropy, log_probs,hidden_states_ls,answer_mask = self._forward_micro_batch(
+                entropy, log_probs, hidden_states_ls, answer_mask_ls = self._forward_micro_batch(
                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
                     output_hidden_states=get_hidden_state,
                     layer_list=self.layer_list
                 )
             log_probs_lst.append(log_probs)
-            if get_hidden_state:
-                hidden_states_lst.append(hidden_states_ls)
-                answer_mask_lst.append(answer_mask)
             if calculate_entropy:
                 entropy_lst.append(entropy)
-        if get_hidden_state:
-            hidden_states=torch.concat(hidden_states_lst,dim=0)
-            answer_mask=torch.concat(answer_mask_lst,dim=0)
-        else:
-            hidden_states=None
-            answer_mask=None
+
+            if get_hidden_state:
+                bsz = hidden_states_ls.size(0)
+                # seq_len = hidden_states_ls.size(2)
+                hidden_states[start_idx:start_idx + bsz] = hidden_states_ls.to(dtype=torch.bfloat16)
+                answer_mask[start_idx:start_idx + bsz] = answer_mask_ls.to(dtype=torch.int64)
+                start_idx += bsz
+
         log_probs = torch.concat(log_probs_lst, dim=0)
         entropys = None
         if calculate_entropy:
@@ -721,10 +738,87 @@ class DataParallelPPOActor(BasePPOActor):
             if calculate_entropy:
                 entropys = restore_dynamic_batch(entropys, batch_idx_list)
             if get_hidden_state:
-                hidden_states= restore_dynamic_batch(hidden_states,batch_idx_list)
-                answer_mask=restore_dynamic_batch(answer_mask,batch_idx_list)
+                hidden_states = restore_dynamic_batch(hidden_states, batch_idx_list)
+                answer_mask = restore_dynamic_batch(answer_mask, batch_idx_list)
 
-        return log_probs, entropys, hidden_states,answer_mask
+        return log_probs, entropys, hidden_states, answer_mask
+
+
+    # @GPUMemoryLogger(role="dp actor", logger=logger)
+    # def compute_log_prob(self, data: DataProto, calculate_entropy=False,get_hidden_state=False) -> torch.Tensor:
+    #     """Compute the log probability of the responses given input_ids, attention_mask and position_ids
+
+    #     Args:
+    #         data (DataProto): a DataProto containing keys
+
+    #             ``input_ids``: tensor of shape [batch_size, sequence_length]. torch.int64. Note that input_ids is the
+    #             concatenation of prompt and response. Note that ``sequence_length = prompt_length + response_length``.
+
+    #             ``attention_mask``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+    #             ``position_ids``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+    #             ``responses``:  tensor of shape [batch_size, response_length]. torch.int64.
+
+    #     Returns:
+    #         torch.Tensor: the log_prob tensor
+    #     """
+    #     # set to eval
+    #     self.actor_module.eval()
+
+    #     micro_batch_size = data.meta_info["micro_batch_size"]
+    #     temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+    #     use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
+    #     has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
+    #     select_keys = ["responses", "input_ids", "attention_mask", "position_ids",'response_mask']
+    #     non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
+
+    #     data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
+
+    #     if use_dynamic_bsz:
+    #         max_token_len = data.meta_info["max_token_len"] * self.ulysses_sequence_parallel_size
+    #         micro_batches, batch_idx_list = prepare_dynamic_batch(data, max_token_len=max_token_len)
+    #     else:
+    #         micro_batches = data.split(micro_batch_size)
+
+    #     log_probs_lst = []
+    #     entropy_lst = []
+    #     hidden_states_lst=[]
+    #     answer_mask_lst=[]
+    #     for micro_batch in micro_batches:
+    #         model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
+    #         with torch.no_grad():
+    #             entropy, log_probs,hidden_states_ls,answer_mask = self._forward_micro_batch(
+    #                 model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
+    #                 output_hidden_states=get_hidden_state,
+    #                 layer_list=self.layer_list
+    #             )
+    #         log_probs_lst.append(log_probs)
+    #         if get_hidden_state:
+    #             hidden_states_lst.append(hidden_states_ls)
+    #             answer_mask_lst.append(answer_mask)
+    #         if calculate_entropy:
+    #             entropy_lst.append(entropy)
+    #     if get_hidden_state:
+    #         hidden_states=torch.concat(hidden_states_lst,dim=0)
+    #         answer_mask=torch.concat(answer_mask_lst,dim=0)
+    #     else:
+    #         hidden_states=None
+    #         answer_mask=None
+    #     log_probs = torch.concat(log_probs_lst, dim=0)
+    #     entropys = None
+    #     if calculate_entropy:
+    #         entropys = torch.concat(entropy_lst, dim=0)
+
+    #     if use_dynamic_bsz:
+    #         log_probs = restore_dynamic_batch(log_probs, batch_idx_list)
+    #         if calculate_entropy:
+    #             entropys = restore_dynamic_batch(entropys, batch_idx_list)
+    #         if get_hidden_state:
+    #             hidden_states= restore_dynamic_batch(hidden_states,batch_idx_list)
+    #             answer_mask=restore_dynamic_batch(answer_mask,batch_idx_list)
+
+    #     return log_probs, entropys, hidden_states,answer_mask
     @GPUMemoryLogger(role="dp actor", logger=logger)
     def compute_golden_hidden_states(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
@@ -746,13 +840,12 @@ class DataParallelPPOActor(BasePPOActor):
         """
         # set to eval
         self.actor_module.eval()
-
         micro_batch_size = data.meta_info["micro_batch_size"]
-        temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+        temperature = data.meta_info["temperature"]
         use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         select_keys = ["responses", "input_ids", "attention_mask", "position_ids"]
-        select_keys+=['golden_answer_ids','golden_answer_position_ids','golden_answer_attention_mask']
+        select_keys += ['golden_answer_ids', 'golden_answer_position_ids', 'golden_answer_attention_mask']
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
 
         data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
@@ -763,36 +856,107 @@ class DataParallelPPOActor(BasePPOActor):
         else:
             micro_batches = data.split(micro_batch_size)
 
-        # log_probs_lst = []
-        # entropy_lst = []
-        hidden_states_lst = []
-        ref_golden_answer_mask_lst = []
+        # 预先分配大 tensorn
+        total_batch_size = sum(mb.batch['golden_answer_attention_mask'].size(0) for mb in micro_batches)
+        device=micro_batches[0].batch['golden_answer_attention_mask'].device
+
+        hidden_states = torch.empty((total_batch_size,
+        len(self.layer_list),
+        micro_batches[0].batch['golden_answer_attention_mask'].size(1) ,
+        self.hidden_state_size), device=device, dtype=torch.bfloat16)
+        ref_golden_answer_mask = torch.empty((total_batch_size, micro_batches[0].batch["golden_answer_attention_mask"].size(1)),
+                                            device=device, dtype=torch.int64)
+
+        start_idx = 0
         for micro_batch in micro_batches:
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                entropy, log_probs,hidden_states_ls,ref_golden_answer_mask = self._forward_micro_batch_golden_response(
+                _, _, h, mask = self._forward_micro_batch_golden_response(
                     model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
                     output_hidden_states=True,
                     layer_list=self.layer_list
                 )
-            h=hidden_states_ls
-            # last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
-            # golden_batch_indices = torch.arange(h.size(0), device=h.device)
-            # h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
-            hidden_states_lst.append(h)
-            ref_golden_answer_mask_lst.append(ref_golden_answer_mask)
-        # log_probs = torch.concat(log_probs_lst, dim=0)
-        hidden_states = torch.concat(hidden_states_lst, dim=0)
-        ref_golden_answer_mask = torch.concat(ref_golden_answer_mask_lst, dim=0)
-        # entropys = None
-        # if calculate_entropy:
-            # entropys = torch.concat(entropy_lst, dim=0)
+            bsz = h.size(0)
+            hidden_states[start_idx:start_idx + bsz] = h.to(dtype=torch.bfloat16)
+            ref_golden_answer_mask[start_idx:start_idx + bsz] = mask.to(dtype=torch.int64)
+            start_idx += bsz
+            # del h, mask
+            # torch.cuda.empty_cache()
 
         if use_dynamic_bsz:
             hidden_states = restore_dynamic_batch(hidden_states, batch_idx_list)
             ref_golden_answer_mask = restore_dynamic_batch(ref_golden_answer_mask, batch_idx_list)
 
-        return hidden_states,ref_golden_answer_mask
+        return hidden_states, ref_golden_answer_mask
+
+    # @GPUMemoryLogger(role="dp actor", logger=logger)
+    # def compute_golden_hidden_states(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
+    #     """Compute the log probability of the responses given input_ids, attention_mask and position_ids
+
+    #     Args:
+    #         data (DataProto): a DataProto containing keys
+
+    #             ``input_ids``: tensor of shape [batch_size, sequence_length]. torch.int64. Note that input_ids is the
+    #             concatenation of prompt and response. Note that ``sequence_length = prompt_length + response_length``.
+
+    #             ``attention_mask``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+    #             ``position_ids``: tensor of shape [batch_size, sequence_length]. torch.int64.
+
+    #             ``responses``:  tensor of shape [batch_size, response_length]. torch.int64.
+
+    #     Returns:
+    #         torch.Tensor: the log_prob tensor
+    #     """
+    #     # set to eval
+    #     self.actor_module.eval()
+
+    #     micro_batch_size = data.meta_info["micro_batch_size"]
+    #     temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+    #     use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
+    #     has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
+    #     select_keys = ["responses", "input_ids", "attention_mask", "position_ids"]
+    #     select_keys+=['golden_answer_ids','golden_answer_position_ids','golden_answer_attention_mask']
+    #     non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
+
+    #     data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
+
+    #     if use_dynamic_bsz:
+    #         max_token_len = data.meta_info["max_token_len"] * self.ulysses_sequence_parallel_size
+    #         micro_batches, batch_idx_list = prepare_dynamic_batch(data, max_token_len=max_token_len)
+    #     else:
+    #         micro_batches = data.split(micro_batch_size)
+
+    #     # log_probs_lst = []
+    #     # entropy_lst = []
+    #     hidden_states_lst = []
+    #     ref_golden_answer_mask_lst = []
+    #     for micro_batch in micro_batches:
+    #         model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
+    #         with torch.no_grad():
+    #             entropy, log_probs,hidden_states_ls,ref_golden_answer_mask = self._forward_micro_batch_golden_response(
+    #                 model_inputs, temperature=temperature, calculate_entropy=calculate_entropy,
+    #                 output_hidden_states=True,
+    #                 layer_list=self.layer_list
+    #             )
+    #         h=hidden_states_ls
+    #         # last_golden_indices=model_inputs["golden_answer_attention_mask"].sum(dim=1)-1
+    #         # golden_batch_indices = torch.arange(h.size(0), device=h.device)
+    #         # h = h[golden_batch_indices, last_golden_indices] # (bsz, hidden_size)
+    #         hidden_states_lst.append(h)
+    #         ref_golden_answer_mask_lst.append(ref_golden_answer_mask)
+    #     # log_probs = torch.concat(log_probs_lst, dim=0)
+    #     hidden_states = torch.concat(hidden_states_lst, dim=0)
+    #     ref_golden_answer_mask = torch.concat(ref_golden_answer_mask_lst, dim=0)
+    #     # entropys = None
+    #     # if calculate_entropy:
+    #         # entropys = torch.concat(entropy_lst, dim=0)
+
+    #     if use_dynamic_bsz:
+    #         hidden_states = restore_dynamic_batch(hidden_states, batch_idx_list)
+    #         ref_golden_answer_mask = restore_dynamic_batch(ref_golden_answer_mask, batch_idx_list)
+
+    #     return hidden_states,ref_golden_answer_mask
     @GPUMemoryLogger(role="dp actor", logger=logger)
     def compute_generated_hidden_states(self, data: DataProto, calculate_entropy=False) -> torch.Tensor:
         self.actor_module.eval()

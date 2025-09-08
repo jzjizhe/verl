@@ -1238,6 +1238,8 @@ class RayPPOTrainer:
                         metrics.update(old_log_prob_metrics)
                         old_log_prob.batch.pop("entropys")
                         batch = batch.union(old_log_prob)
+                        del old_log_prob
+                        torch.cuda.empty_cache()  # 清理GPU缓存
 
                         if "rollout_log_probs" in batch.batch.keys():
                             # TODO: we may want to add diff of probs too.
@@ -1293,6 +1295,8 @@ class RayPPOTrainer:
                             # ref_golden_hidden_states = DataProto.from_dict(tensors={"golden_ref_hidden_states": combined_data.batch["golden_ref_hidden_states"]})
                             # golden_answer_mask = DataProto.from_dict(tensors={"ref_golden_answer_mask": combined_data.batch["ref_golden_answer_mask"]})
                             batch = batch.union(combined_golden)
+                            del combined_golden
+                            torch.cuda.empty_cache()  # 清理GPU缓存
                             # batch = batch.union(golden_answer_mask)
                     # compute values
                     if self.use_critic:
@@ -1332,7 +1336,6 @@ class RayPPOTrainer:
                             uid=None,
                             config=self.config.actor_rollout_ref.actor)
                             metrics.update({"actor/repa_reward":align_reward.mean().detach().item()})
-                            # 释放传入变量占用的显存
                             del batch.batch['actor_hidden_states']
                             del batch.batch['actor_golden_hidden_states'] 
                             del batch.batch['actor_answer_mask']

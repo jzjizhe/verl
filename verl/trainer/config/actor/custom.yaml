@@ -14,3 +14,4 @@ align_type: last_token
 loss_type: cosine
 golden_from: None
 use_repa_in_reward: False
+hidden_state_size: 0
