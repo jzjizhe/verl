@@ -1332,6 +1332,13 @@ class RayPPOTrainer:
                             uid=None,
                             config=self.config.actor_rollout_ref.actor)
                             metrics.update({"actor/repa_reward":align_reward.mean().detach().item()})
+                            # 释放传入变量占用的显存
+                            del batch.batch['actor_hidden_states']
+                            del batch.batch['actor_golden_hidden_states'] 
+                            del batch.batch['actor_answer_mask']
+                            del batch.batch['actor_golden_answer_mask']
+                            del batch.batch['token_level_scores']
+                            torch.cuda.empty_cache()  # 清理GPU缓存
                         else:
                             align_reward=None
 
