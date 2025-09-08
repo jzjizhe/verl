@@ -1337,7 +1337,6 @@ class RayPPOTrainer:
                             del batch.batch['actor_golden_hidden_states'] 
                             del batch.batch['actor_answer_mask']
                             del batch.batch['actor_golden_answer_mask']
-                            del batch.batch['token_level_scores']
                             torch.cuda.empty_cache()  # 清理GPU缓存
                         else:
                             align_reward=None
