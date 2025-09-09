@@ -34,7 +34,7 @@ from verl.utils.py_functional import append_to_dict
 from verl.utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_batch
 from verl.utils.torch_functional import logprobs_from_logits
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad, ulysses_pad_and_slice_inputs
-from verl.utils.regular_loss import compute_golden_loss
+from verl.utils.regular_loss import compute_golden_loss, process_hidden
 from verl.utils.custom_print import rank_zero_print
 from verl.workers.actor import BasePPOActor
 import math
@@ -74,7 +74,6 @@ def find_special_positions(tensor, token_id, mask):
     has_token = mask_token.any(dim=1)
     result = torch.where(has_token, last_token_pos, pad_prev_pos)
     
-    # 强制覆盖条件：当差值超过10时使用pad_prev_pos
     delta = pad_prev_pos - last_token_pos
     override_mask = (delta > 20)
     result = torch.where(override_mask, pad_prev_pos, result)
@@ -99,7 +98,7 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
                 if start_idx < end_idx:
                     new_mask[i, start_idx:end_idx]=1
                 else:
-                    start_idx = start_idx - 10
+                    start_idx = start_idx - 10 if (start_idx -10)>=0 else 0
                     new_mask[i, start_idx:end_idx]=1
         hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
         return hidden_states_ls,new_mask
@@ -117,7 +116,7 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
                 else:
                     start_idx = start_idx - 10
                     new_mask[i, start_idx:end_idx]=1
-        hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
+        # hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
         return hidden_states_ls,new_mask
     elif align_type=="all_token":
         return torch.stack(hidden_states_ls,dim=0).transpose(0,1),mask
@@ -128,6 +127,33 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
     hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
     return hidden_states_ls,mask
 
+def process_reward_hidden_states(hidden_states_ls,mask,input_ids,token_id=79075):
+    # new_mask=torch.zeros_like(mask)
+    b,l,s,h=hidden_states_ls.shape
+    answer_hidden=torch.zeros((b,l,20,h),
+                device=hidden_states_ls.device,
+                dtype=hidden_states_ls.dtype)
+    answer_mask=torch.zeros((b,20),
+                device=mask.device,
+                dtype=mask.dtype )
+    # token_indices=find_special_positions(input_ids,token_id,mask)
+    token_indices = mask.float().argmax(dim=1)
+    last_token_indices=token_indices+mask.sum(dim=1)
+    for i,hidden_states in enumerate(hidden_states_ls):
+        start_idx = token_indices[i]
+        end_idx = last_token_indices[i]
+        if start_idx < end_idx:
+            answer_hidden[i,:,0:(end_idx-start_idx),:]=hidden_states[:,start_idx:end_idx]
+            answer_mask[i,0:(end_idx-start_idx)]=1
+        # elif start_idx==0 and end_idx==0
+        else:
+            # try:
+            start_idx = start_idx - 10 if (start_idx-10)>=0 else 0
+            answer_hidden[i,:,0:(end_idx-start_idx),:]=hidden_states[:,start_idx:end_idx]
+            answer_mask[i,0:(end_idx-start_idx)]=1
+            # except:
+            #     import pdb;pdb.set_trace()
+    return answer_hidden,answer_mask
 class DataParallelPPOActor(BasePPOActor):
     def __init__(self, config, actor_module: nn.Module, actor_optimizer: torch.optim.Optimizer = None):
         """When optimizer is None, it is Reference Policy"""
@@ -677,7 +703,6 @@ class DataParallelPPOActor(BasePPOActor):
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         select_keys = ["responses", "input_ids", "attention_mask", "position_ids",'response_mask']
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
-
         data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
 
         if use_dynamic_bsz:
@@ -695,12 +720,12 @@ class DataParallelPPOActor(BasePPOActor):
         if get_hidden_state:
             max_seq_len = max(mb.batch['response_mask'].size(1) for mb in micro_batches)
             hidden_states = torch.empty(
-                (total_batch_size, len(self.layer_list), max_seq_len, self.hidden_state_size),
+                (total_batch_size, len(self.layer_list), 20, self.hidden_state_size),
                 device=device,
                 dtype=torch.bfloat16
             )
             answer_mask = torch.empty(
-                (total_batch_size, max_seq_len),
+                (total_batch_size, 20),
                 device=device,
                 dtype=torch.int64
             )
@@ -717,13 +742,14 @@ class DataParallelPPOActor(BasePPOActor):
                     output_hidden_states=get_hidden_state,
                     layer_list=self.layer_list
                 )
+                if get_hidden_state:              
+                    hidden_states_ls,answer_mask_ls = process_reward_hidden_states(hidden_states_ls,answer_mask_ls,micro_batch.batch['responses'])
             log_probs_lst.append(log_probs)
             if calculate_entropy:
                 entropy_lst.append(entropy)
 
             if get_hidden_state:
                 bsz = hidden_states_ls.size(0)
-                # seq_len = hidden_states_ls.size(2)
                 hidden_states[start_idx:start_idx + bsz] = hidden_states_ls.to(dtype=torch.bfloat16)
                 answer_mask[start_idx:start_idx + bsz] = answer_mask_ls.to(dtype=torch.int64)
                 start_idx += bsz
@@ -862,9 +888,9 @@ class DataParallelPPOActor(BasePPOActor):
 
         hidden_states = torch.empty((total_batch_size,
         len(self.layer_list),
-        micro_batches[0].batch['golden_answer_attention_mask'].size(1) ,
+        20 ,
         self.hidden_state_size), device=device, dtype=torch.bfloat16)
-        ref_golden_answer_mask = torch.empty((total_batch_size, micro_batches[0].batch["golden_answer_attention_mask"].size(1)),
+        ref_golden_answer_mask = torch.empty((total_batch_size, 20),
                                             device=device, dtype=torch.int64)
 
         start_idx = 0
@@ -876,6 +902,7 @@ class DataParallelPPOActor(BasePPOActor):
                     output_hidden_states=True,
                     layer_list=self.layer_list
                 )
+                h,mask = process_reward_hidden_states(h,mask,micro_batch.batch['responses'])
             bsz = h.size(0)
             hidden_states[start_idx:start_idx + bsz] = h.to(dtype=torch.bfloat16)
             ref_golden_answer_mask[start_idx:start_idx + bsz] = mask.to(dtype=torch.int64)
