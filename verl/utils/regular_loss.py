@@ -82,12 +82,8 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     h1 = hidden_states_ls  # (bsz, layers, seq_len, hidden_dim)
     h2 = golden_hidden_ls  # (bsz, layers, seq_len, hidden_dim)
     if config.get("add_mlp",False) or config.get("add_attention_pooling",False):
-        # 将h1的数据类型转成和projector一致
-        # print(h1.dtype)
-        # print(projector.layers[0].weight.dtype)
         h1=projector(h1[:,0,:,:])
     if config.get("add_mlp_golden",False) or config.get("add_attention_pooling",False):
-        # h2 = h2.to(next(projector.parameters()).dtype)
         with torch.no_grad():
             h2=projector(h2[:,0,:,:])
     if normalize:
@@ -118,12 +114,6 @@ def compute_golden_loss(hidden_states_ls, golden_hidden_ls, hidden_mask, golden_
     elif loss_type=="cosine_wrong":
         cos_sim = F.cosine_similarity(h1, h2, dim=-1).mean(dim=-1)
         flip_score = 1-token_level_scores.sum(-1)
-        # total_flip = flip_score.sum()
-        # hidden_golden_loss = (
-        #     1 - (cos_sim * flip_score).sum() / total_flip 
-        #     if total_flip > 0 
-        #     else torch.zeros_like(cos_sim).sum()  # 返回同设备/类型的零张量
-        # ) 
         hidden_golden_loss = 1 - (cos_sim * flip_score).mean()
     elif loss_type=="contrastive":
         df = pd.DataFrame({"uid": uid, "original_idx": range(len(uid))})

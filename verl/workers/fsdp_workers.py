@@ -295,7 +295,7 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
                 mlp = mlp.to(torch_dtype)  # 确保 projector 使用正确的数据类型
                 actor_module.custom_mlp=mlp
             if self.config.actor.add_attention_pooling:
-                attention_pooling=add_attention_pooling(actor_module.config.hidden_size)
+                attention_pooling=add_attention_pooling(actor_module.config.hidden_size,self.config.actor.layernorm)
                 attention_pooling = attention_pooling.to(torch_dtype)  # 确保 projector 使用正确的数据类型
                 actor_module.custom_mlp=attention_pooling
 

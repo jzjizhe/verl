@@ -36,6 +36,7 @@ from verl.utils.torch_functional import logprobs_from_logits
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad, ulysses_pad_and_slice_inputs
 from verl.utils.regular_loss import compute_golden_loss, process_hidden
 from verl.utils.custom_print import rank_zero_print
+# from verl.verl.utils import device
 from verl.workers.actor import BasePPOActor
 import math
 if is_cuda_available:
@@ -82,6 +83,10 @@ def find_special_positions(tensor, token_id, mask):
 def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=79075):
     if align_type=="last_token":
         token_indices=mask.sum(dim=1)-1
+    elif align_type=="random_bottom_k":
+        k = torch.randint(1, 11, (mask.size(0),),device=mask.device)
+        # k = torch.randint(1, 11, (1,),device=mask.device)
+        token_indices=mask.sum(dim=1)-k
     elif align_type=="token-2":
         token_indices=mask.sum(dim=1)-2
     elif align_type=="box_token":
@@ -145,7 +150,6 @@ def process_reward_hidden_states(hidden_states_ls,mask,input_ids,token_id=79075)
         if start_idx < end_idx:
             answer_hidden[i,:,0:(end_idx-start_idx),:]=hidden_states[:,start_idx:end_idx]
             answer_mask[i,0:(end_idx-start_idx)]=1
-        # elif start_idx==0 and end_idx==0
         else:
             # try:
             start_idx = start_idx - 10 if (start_idx-10)>=0 else 0

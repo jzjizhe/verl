@@ -33,9 +33,9 @@ for idx,item in enumerate(data_list):
     except:
         print(idx)
         # import pdb;pdb.set_trace()
-df = pd.DataFrame(math_format_data*3)
-print(len(math_format_data*3))
-df.to_parquet("/data0/jzzhang/verl/datasets/NuminaMath-CoT/NuminaMath171k_test_math_format.parquet", index=False)
+df = pd.DataFrame(math_format_data)
+print(len(math_format_data))
+df.to_parquet("/data0/jzzhang/verl/datasets/NuminaMath-CoT/NuminaMath171k_test_math_format_one.parquet", index=False)
     
     
     

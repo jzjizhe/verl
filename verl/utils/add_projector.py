@@ -19,11 +19,13 @@ class MLP(nn.Module):
         return self.layers(x)
     
 class AttentionPooling(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim,layernorm=False):
         super().__init__()
         # 可学习的查询向量（语义探测器）
         self.query = nn.Parameter(torch.randn(hidden_dim))  # 形状: [dim]
-        
+        self.is_layernorm=layernorm
+        if self.is_layernorm:
+            self.layernorm=nn.LayerNorm(hidden_dim)
     def forward(self, hidden_states, mask=None):
         """
         输入: 
@@ -49,6 +51,8 @@ class AttentionPooling(nn.Module):
         attn_weights = attn_weights.unsqueeze(1)
         # 矩阵乘法: [batch_size, 1, seq_len] × [batch_size, seq_len, dim] → [batch_size, 1, dim]
         pooled = torch.bmm(attn_weights, hidden_states).squeeze(1)
+        if self.is_layernorm:
+            pooled=self.layernorm(pooled)
         
         return pooled
 
@@ -58,6 +62,6 @@ def add_mlp(input_size, hidden_size, mlp_layers=2):
     """返回一个继承 nn.Module 的 MLP 实例"""
     return MLP(input_size, hidden_size, mlp_layers)
 
-def add_attention_pooling(token_dim):
-    return AttentionPooling(token_dim)
+def add_attention_pooling(token_dim,layernorm):
+    return AttentionPooling(token_dim,layernorm)
 
