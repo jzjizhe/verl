@@ -1034,8 +1034,15 @@ class DataParallelPPOActor(BasePPOActor):
     def golden_loss_weight_schedule(self,step,loss_weight,total_steps,scheduler_type="cosine"):
         step-=1 # 0-indexed
         if scheduler_type=="cosine":
-            eta_min = 0
+            eta_min = self.config.eta_min
             return eta_min + (loss_weight - eta_min) * (1 + math.cos(math.pi * step / total_steps)) / 2
+        elif scheduler_type=="reverse_cosine":
+            eta_min = self.config.eta_min 
+            return eta_min + (loss_weight - eta_min) * (1 - math.cos(math.pi * step / total_steps)) / 2
+        elif scheduler_type=="fastdecay":
+            eta_min=self.config.eta_min
+            progress = step / total_steps
+            return eta_min + (loss_weight- eta_min) * (1 - math.sqrt(progress**0.5))            
         elif scheduler_type=="linear":
             return loss_weight * (1 - step / total_steps)
         elif scheduler_type=="constant":

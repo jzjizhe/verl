@@ -32,9 +32,9 @@ for idx,item in enumerate(data_list):
     except:
         print(idx)
         # import pdb;pdb.set_trace()
-df = pd.DataFrame(math_format_data*3)
-print(len(math_format_data*3))
-df.to_parquet("/data0/jzzhang/verl/datasets/aime24/aime2024_math_format_repeat3.parquet", index=False)
+df = pd.DataFrame(math_format_data)
+# print(len(math_format_data*3))
+df.to_parquet("/data0/jzzhang/verl/datasets/aime24/aime2024_math_format_one.parquet", index=False)
     
     
     
