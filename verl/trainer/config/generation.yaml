@@ -12,6 +12,7 @@ data:
   batch_size: 128
   tokenizer_golden_answer: False
   reward_model_key: reward_model
+  result_path:
 
 model:
   path: ~/models/Qwen2-7B-Instruct
@@ -72,4 +73,3 @@ ray_init:
   num_cpus: null # `None` means using all CPUs, which might cause hang if limited in systems like SLURM. Please set to a number allowed then.
   timeline_json_file: null
 
-output_file:

@@ -52,9 +52,9 @@ def default_compute_score(
         # For enhanced accuracy, consider utilizing Math-Verify (https://github.com/huggingface/Math-Verify).
         # Note: Math-Verify needs to be manually installed via pip: `pip install math-verify`.
         # To use it, override the `compute_score` function with the following implementation:
-    elif "math_verify" in data_source:
-        from . import math_verify
-        res = math_verify.compute_score(solution_str, ground_truth)
+    # elif "math_verify" in data_source:
+    #     from . import math_verify
+    #     res = math_verify.compute_score(solution_str, ground_truth)
     elif data_source == "math_dapo" or data_source.startswith("aime"):
         from . import math_dapo
 
@@ -66,7 +66,7 @@ def default_compute_score(
         "numina_synthetic_amc",
         "numina_cn_k12",
         "numina_olympiads",
-    ]:
+    ] or ("math_verify" in data_source):
         from . import prime_math
 
         res = prime_math.compute_score(solution_str, ground_truth)

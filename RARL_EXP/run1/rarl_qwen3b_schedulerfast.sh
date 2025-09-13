@@ -25,7 +25,6 @@ layer=20
 loss_weight=0.001
 run_name=ep${total_epochs}_step${total_steps}_layer${layer}_w${loss_weight}_scdfast
 save_root=/mnt_out/songyanh/logs/RARL_results/Qwen2.5-3B/${run_name}
-export WANDB_MODE=offline
 export WANDB_DIR=/mnt_out/songyanh/logs/RARL_results/wandb_log/${run_name}
 export TENSORBOARD_DIR=/mnt_out/songyanh/logs/RARL_results/tensorboard_log/${run_name}
 mkdir -p ${save_root}
@@ -78,7 +77,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.7 \
     actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
-    actor_rollout_ref.rollout.val_kwargs.n=8 \
+    actor_rollout_ref.rollout.val_kwargs.n=32 \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.val_before_train=True \

@@ -143,7 +143,7 @@ def main_task(config):
     output_info=[]
     for path in datasets_path:
         file_name=os.path.basename(path)
-        process_info=f"==============={path} is processing==============="
+        process_info=f"\n==============={file_name} is processing==============="
 
         output_info.append(process_info)
         print(process_info)
@@ -210,8 +210,8 @@ def main_task(config):
     output_text = "\n".join(output_info)
     # print(output_text)
     # 保存到txt文件
-    output_file = config.data.get("output_file", "evaluation_results.txt")
-    with open(output_file, "w", encoding="utf-8") as f:
+    output_file = config.data.get("result_path", "evaluation_results.txt")
+    with open(output_file, "a", encoding="utf-8") as f:
         f.write(output_text)
     print(f"结果已保存到: {output_file}")
 
