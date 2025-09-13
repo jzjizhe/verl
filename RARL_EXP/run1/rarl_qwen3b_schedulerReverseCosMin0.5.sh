@@ -1,5 +1,6 @@
 
 #!/bin/bash
+set -x
 max_tokens=71680
 n_nodes=4
 total_epochs=1
@@ -77,17 +78,17 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.val_kwargs.top_p=0.7 \
     actor_rollout_ref.rollout.val_kwargs.top_k=-1 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
-    actor_rollout_ref.rollout.val_kwargs.n=32 \
+    actor_rollout_ref.rollout.val_kwargs.n=8 \
     algorithm.use_kl_in_reward=False \
     trainer.critic_warmup=0 \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=${n_nodes} \
-    trainer.logger=['console','tensorboard'] \
+    trainer.logger=['console','wandb','tensorboard'] \
     trainer.project_name=RARL-Qwen2.5-3B \
     trainer.experiment_name=${run_name} \
     trainer.save_freq=20 \
-    trainer.test_freq=5 \
+    trainer.test_freq=20 \
     trainer.resume_mode=disable \
     trainer.total_epochs=${total_epochs} \
     trainer.total_training_steps=${total_steps} \
@@ -101,4 +102,5 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     data.tokenizer_golden_answer=True \
     actor_rollout_ref.actor.align_type=answer_tokens \
     actor_rollout_ref.actor.loss_type=dtw_cosine \
-    actor_rollout_ref.actor.golden_loss_scheduler_type=cosine > ${save_root}/log.txt
+    actor_rollout_ref.actor.golden_loss_scheduler_type=reverse_cosine \
+    actor_rollout_ref.actor.eta_min=0.5 > ${save_root}/log.txt

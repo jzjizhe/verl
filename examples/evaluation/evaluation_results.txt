@@ -1,0 +1,8 @@
+===============/data0/jzzhang/verl/datasets/aime24/aime2024_math_format.parquet is processing===============
+mean@1: 0.0
+var@1: 0.0
+pass@1: 0.0
+===============/data0/jzzhang/verl/datasets/aime25/aime2025_math_format.parquet is processing===============
+mean@1: 0.0
+var@1: 0.0
+pass@1: 0.0
