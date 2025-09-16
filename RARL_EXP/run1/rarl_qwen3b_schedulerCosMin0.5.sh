@@ -1,7 +1,7 @@
 
 #!/bin/bash
 set -x
-max_tokens=65536
+max_tokens=56320
 n_nodes=4
 total_epochs=1
 total_steps=300
@@ -65,7 +65,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
-    actor_rollout_ref.rollout.max_num_batched_tokens=102400 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=92160 \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True \
     actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
@@ -92,4 +92,14 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.total_epochs=${total_epochs} \
     trainer.total_training_steps=${total_steps} \
     trainer.default_local_dir=${save_root}/model \
-    train
+    trainer.rollout_data_dir=${save_root}/rollout \
+    trainer.validation_data_dir=${save_root}/val_data \
+    actor_rollout_ref.actor.get_hidden_state=True \
+    actor_rollout_ref.actor.layer_list=[$layer] \
+    actor_rollout_ref.actor.use_golden_loss=True \
+    actor_rollout_ref.actor.golden_loss_weight=${loss_weight} \
+    data.tokenizer_golden_answer=True \
+    actor_rollout_ref.actor.align_type=answer_tokens \
+    actor_rollout_ref.actor.loss_type=dtw_cosine \
+    actor_rollout_ref.actor.golden_loss_scheduler_type=cosine \
+    actor_rollout_ref.actor.eta_min=0.5 > ${save_root}/log.txt
