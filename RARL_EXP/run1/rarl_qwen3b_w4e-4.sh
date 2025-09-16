@@ -1,7 +1,7 @@
 
 #!/bin/bash
 set -x
-max_tokens=71680
+max_tokens=56320
 n_nodes=4
 total_epochs=1
 total_steps=300
@@ -65,7 +65,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
-    actor_rollout_ref.rollout.max_num_batched_tokens=131072 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=92160 \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True \
     actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
