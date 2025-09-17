@@ -1,8 +1,8 @@
 
 #!/bin/bash
 set -x
-max_tokens=32768
-n_nodes=4
+max_tokens=56320
+n_nodes=1
 total_epochs=1
 total_steps=300
 
@@ -10,8 +10,8 @@ export HYDRA_FULL_ERROR=1
 export WANDB_API_KEY="85e14f750c46ca9436de0aacd93aa7664448c30c"
 export ACCELERATE_LOG_LEVEL=info
 
-DATA_HOME=/workspace/RARL_dataset
-model_path=/mnt_out/songyanh/models/Qwen2.5-3B
+DATA_HOME=/data0/jzzhang/AstirPair/RARL
+model_path=/data1/jzzhang/models/Qwen/Qwen2.5-3B
 train_path="${DATA_HOME}/train/NuminaMath342k.parquet"
 numina_test_path="${DATA_HOME}/test/numina_test.parquet"
 math500_test_path="${DATA_HOME}/test/math500.parquet"
@@ -22,11 +22,11 @@ amc_test_path="${DATA_HOME}/test/amc.parquet"
 train_files="['$train_path']"
 test_files="['$numina_test_path','$math500_test_path','$aime24_test_path','$aime25_test_path','$amc_test_path']"
 layer=20
-loss_weight=0.001
-run_name=ep${total_epochs}_step${total_steps}_layer${layer}_w${loss_weight}_scdCos
-save_root=/mnt_out/songyanh/logs/RARL_results/Qwen2.5-3B/${run_name}
-export WANDB_DIR=/mnt_out/songyanh/logs/RARL_results/wandb_log/${run_name}
-export TENSORBOARD_DIR=/mnt_out/songyanh/logs/RARL_results/tensorboard_log/${run_name}
+loss_weight=0.0005
+run_name=ep${total_epochs}_step${total_steps}_layer${layer}_w${loss_weight}
+save_root=/data1/jzzhang/verl_results/Qwen2.5-3B/${run_name}
+export WANDB_DIR=/data1/jzzhang/verl_results/Qwen2.5-3B/wandb_log/${run_name}
+export TENSORBOARD_DIR=/data1/jzzhang/verl_results/Qwen2.5-3B/tensorboard_log/${run_name}
 mkdir -p ${save_root}
 
 PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
@@ -83,7 +83,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=${n_nodes} \
-    trainer.logger=['console','wandb','tensorboard'] \
+    trainer.logger=['console','tensorboard'] \
     trainer.project_name=RARL-Qwen2.5-3B \
     trainer.experiment_name=${run_name} \
     trainer.save_freq=20 \
@@ -100,5 +100,4 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.golden_loss_weight=${loss_weight} \
     data.tokenizer_golden_answer=True \
     actor_rollout_ref.actor.align_type=answer_tokens \
-    actor_rollout_ref.actor.loss_type=dtw_cosine \
-    actor_rollout_ref.actor.golden_loss_scheduler_type=cosine > ${save_root}/log.txt
+    actor_rollout_ref.actor.loss_type=dtw_cosine > ${save_root}/log.txt

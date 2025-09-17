@@ -1,8 +1,7 @@
-
 #!/bin/bash
 set -x
-max_tokens=32768
-n_nodes=4
+max_tokens=20480
+n_nodes=2
 total_epochs=1
 total_steps=300
 
@@ -23,7 +22,7 @@ train_files="['$train_path']"
 test_files="['$numina_test_path','$math500_test_path','$aime24_test_path','$aime25_test_path','$amc_test_path']"
 layer=20
 loss_weight=0.001
-run_name=ep${total_epochs}_step${total_steps}_layer${layer}_w${loss_weight}_scdCos
+run_name=ep${total_epochs}_step${total_steps}_baseline2node
 save_root=/mnt_out/songyanh/logs/RARL_results/Qwen2.5-3B/${run_name}
 export WANDB_DIR=/mnt_out/songyanh/logs/RARL_results/wandb_log/${run_name}
 export TENSORBOARD_DIR=/mnt_out/songyanh/logs/RARL_results/tensorboard_log/${run_name}
@@ -65,7 +64,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
-    actor_rollout_ref.rollout.max_num_batched_tokens=92160 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=133120 \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True \
     actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
@@ -93,12 +92,4 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.total_training_steps=${total_steps} \
     trainer.default_local_dir=${save_root}/model \
     trainer.rollout_data_dir=${save_root}/rollout \
-    trainer.validation_data_dir=${save_root}/val_data \
-    actor_rollout_ref.actor.get_hidden_state=True \
-    actor_rollout_ref.actor.layer_list=[$layer] \
-    actor_rollout_ref.actor.use_golden_loss=True \
-    actor_rollout_ref.actor.golden_loss_weight=${loss_weight} \
-    data.tokenizer_golden_answer=True \
-    actor_rollout_ref.actor.align_type=answer_tokens \
-    actor_rollout_ref.actor.loss_type=dtw_cosine \
-    actor_rollout_ref.actor.golden_loss_scheduler_type=cosine > ${save_root}/log.txt
+    ray_init.num_cpus=96 > ${save_root}/log.txt

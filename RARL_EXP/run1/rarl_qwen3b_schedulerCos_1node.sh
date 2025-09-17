@@ -2,7 +2,7 @@
 #!/bin/bash
 set -x
 max_tokens=32768
-n_nodes=4
+n_nodes=1
 total_epochs=1
 total_steps=300
 
@@ -23,7 +23,7 @@ train_files="['$train_path']"
 test_files="['$numina_test_path','$math500_test_path','$aime24_test_path','$aime25_test_path','$amc_test_path']"
 layer=20
 loss_weight=0.001
-run_name=ep${total_epochs}_step${total_steps}_layer${layer}_w${loss_weight}_scdCos
+run_name=ep${total_epochs}_step${total_steps}_layer${layer}_w${loss_weight}_scdCos_1node
 save_root=/mnt_out/songyanh/logs/RARL_results/Qwen2.5-3B/${run_name}
 export WANDB_DIR=/mnt_out/songyanh/logs/RARL_results/wandb_log/${run_name}
 export TENSORBOARD_DIR=/mnt_out/songyanh/logs/RARL_results/tensorboard_log/${run_name}
