@@ -92,5 +92,4 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.total_training_steps=${total_steps} \
     trainer.default_local_dir=${save_root}/model \
     trainer.rollout_data_dir=${save_root}/rollout \
-    trainer.validation_data_dir=${save_root}/val_data \
-    ray_init.num_cpus=96 > ${save_root}/log.txt
+    trainer.validation_data_dir=${save_root}/val_data  > ${save_root}/log.txt

@@ -93,7 +93,6 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.default_local_dir=${save_root}/model \
     trainer.rollout_data_dir=${save_root}/rollout \
     trainer.validation_data_dir=${save_root}/val_data \
-    ray_init.num_cpus=96 \
     actor_rollout_ref.actor.get_hidden_state=True \
     actor_rollout_ref.actor.layer_list=[$layer] \
     actor_rollout_ref.actor.use_golden_loss=True \
