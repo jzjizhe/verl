@@ -101,4 +101,4 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.align_type=answer_tokens \
     actor_rollout_ref.actor.loss_type=dtw_cosine \
     actor_rollout_ref.actor.golden_loss_scheduler_type=reverse_cosine \
-    actor_rollout_ref.actor.eta_min=5e-4 > ${save_root}/log.txt
+    actor_rollout_ref.actor.eta_min=0.0005 > ${save_root}/log.txt
