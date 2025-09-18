@@ -21,5 +21,5 @@
 |------------------------------|----------|----------|
 | rarl_qwen3b_schedulerCos.sh | P0       | cosine scheduler   |
 | rarl_qwen3b_schedulerCosMin0.5.sh | P0       | cosine scheduler+eta_min=0.5   |
-| rarl_qwen3b_schedulerFastMin0.5.sh | P1       |    |  fast decay scheduler+eta_min=0.5 |
+| rarl_qwen3b_schedulerFastMin0.5.sh | P1       |    fast decay scheduler+eta_min=0.5 |
 | rarl_qwen3b_schedulerReverseCosMin0.5.sh | P1       | reverse cosine scheduler+eta min=0.5   |

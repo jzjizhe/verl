@@ -101,6 +101,5 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     data.tokenizer_golden_answer=True \
     actor_rollout_ref.actor.align_type=answer_tokens \
     actor_rollout_ref.actor.loss_type=dtw_cosine \
-    actor_rollout_ref.actor.golden_loss_scheduler_type=cosine \
     actor_rollout_ref.actor.golden_loss_scheduler_type=fastdecay \
     actor_rollout_ref.actor.eta_min=0.5 > ${save_root}/log.txt
