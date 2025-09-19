@@ -1,6 +1,6 @@
 #!/bin/bash
 set -x
-max_tokens=20480
+max_tokens=8192
 n_nodes=1
 total_epochs=1
 total_steps=300
@@ -22,7 +22,7 @@ train_files="['$train_path']"
 test_files="['$numina_test_path','$math500_test_path','$aime24_test_path','$aime25_test_path','$amc_test_path']"
 layer=20
 loss_weight=0.001
-run_name=ep${total_epochs}_step${total_steps}_baseline1node
+run_name=ep${total_epochs}_step${total_steps}_baseline_dynamic8192
 save_root=/mnt_out/songyanh/logs/RARL_results/Qwen2.5-3B/${run_name}
 export WANDB_DIR=/mnt_out/songyanh/logs/RARL_results/wandb_log/${run_name}
 export TENSORBOARD_DIR=/mnt_out/songyanh/logs/RARL_results/tensorboard_log/${run_name}
@@ -54,8 +54,8 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.kl_loss_coef=0.0 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+    actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=64 \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.actor.ppo_max_token_len_per_gpu=$max_tokens \
     actor_rollout_ref.actor.entropy_coeff=0 \
     actor_rollout_ref.actor.checkpoint.save_contents=['model','extra'] \
