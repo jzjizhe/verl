@@ -1,15 +1,16 @@
 #!/bin/bash
 set -x
-export PATH=/mnt/dolphinfs/hdd_pool/docker/user/hadoop-mtsearch-assistant/ai-search/zhangchenheng/archive/system/conda_envs/reprl/bin:$PATH
-cd /mnt/dolphinfs/hdd_pool/docker/user/hadoop-mtsearch-assistant/ai-search/zhangchenheng/verl
-max_tokens=32768
+max_tokens=13312
 n_nodes=1
 total_epochs=1
 total_steps=300
+
 export HYDRA_FULL_ERROR=1
+export WANDB_API_KEY="85e14f750c46ca9436de0aacd93aa7664448c30c"
 export ACCELERATE_LOG_LEVEL=info
-DATA_HOME=datasets/RARL
-model_path=/mnt/dolphinfs/hdd_pool/docker/user/hadoop-mtsearch-assistant/ai-search/zhangchenheng/archive/model/qwen/Qwen2.5-3B
+
+DATA_HOME=/workspace/RARL_dataset
+model_path=/mnt_out/songyanh/models/Qwen2.5-3B
 train_path="${DATA_HOME}/train/NuminaMath342k.parquet"
 numina_test_path="${DATA_HOME}/test/numina_test.parquet"
 math500_test_path="${DATA_HOME}/test/math500.parquet"
@@ -21,10 +22,10 @@ train_files="['$train_path']"
 test_files="['$numina_test_path','$math500_test_path','$aime24_test_path','$aime25_test_path','$amc_test_path']"
 layer=20
 loss_weight=0.0007
-run_name=ep${total_epochs}_step${total_steps}_align_w7e-4
-model_type=Qwen2.5-3B
-save_root=ckpt/${model_type}/${run_name}
-export TENSORBOARD_DIR=./tensorboard_log/${model_type}/${run_name}
+run_name=ep${total_epochs}_step${total_steps}_w${loss_weight}
+save_root=/mnt_out/songyanh/logs/RARL_results/Qwen2.5-3B/${run_name}
+export WANDB_DIR=/mnt_out/songyanh/logs/RARL_results/wandb_log/${run_name}
+export TENSORBOARD_DIR=/mnt_out/songyanh/logs/RARL_results/tensorboard_log/${run_name}
 mkdir -p ${save_root}
 
 PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
@@ -81,7 +82,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=${n_nodes} \
-    trainer.logger=['console','tensorboard'] \
+    trainer.logger=['console','wandb','tensorboard'] \
     trainer.project_name=RARL-Qwen2.5-3B \
     trainer.experiment_name=${run_name} \
     trainer.save_freq=20 \
