@@ -155,7 +155,7 @@ def dynamic_layer(dynamic_layer_type,step):
         elif 250<=step<300:
             return [9]
         else:
-            return [4]
+            return [9]
     elif dynamic_layer_type=="type3":
         if step<50:
             return [9]
@@ -170,14 +170,14 @@ def dynamic_layer(dynamic_layer_type,step):
         elif 250<=step<300:
             return [34]
         else:
-            return [-1]
+            return [34]
     elif dynamic_layer_type=="type4":
         if step<100:
-            return [-1]
+            return [9]
         elif 100<=step<200:
             return [19]
         else:
-            return [9]
+            return [29]
 def process_reward_hidden_states(hidden_states_ls,mask,input_ids,token_id=79075):
     # new_mask=torch.zeros_like(mask)
     b,l,s,h=hidden_states_ls.shape
