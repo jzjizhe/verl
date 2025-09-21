@@ -132,6 +132,52 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
     hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
     return hidden_states_ls,mask
 
+def dynamic_layer(dynamic_layer_type,step):
+    step-=1 # 0-indexed
+    if dynamic_layer_type=="type1":
+        if step<100:
+            return [29]
+        elif 100<=step<200:
+            return [19]
+        else:
+            return [9]
+    elif dynamic_layer_type=="type2":
+        if step<50:
+            return [34]
+        elif 50<=step<100:
+            return [29]
+        elif 100<=step<150:
+            return [24]
+        elif 150<=step<200:
+            return [19]
+        elif 200<=step<250:
+            return [14]
+        elif 250<=step<300:
+            return [9]
+        else:
+            return [4]
+    elif dynamic_layer_type=="type3":
+        if step<50:
+            return [9]
+        elif 50<=step<100:
+            return [14]
+        elif 100<=step<150:
+            return [19]
+        elif 150<=step<200:
+            return [24]
+        elif 200<=step<250:
+            return [29]
+        elif 250<=step<300:
+            return [34]
+        else:
+            return [-1]
+    elif dynamic_layer_type=="type4":
+        if step<100:
+            return [-1]
+        elif 100<=step<200:
+            return [19]
+        else:
+            return [9]
 def process_reward_hidden_states(hidden_states_ls,mask,input_ids,token_id=79075):
     # new_mask=torch.zeros_like(mask)
     b,l,s,h=hidden_states_ls.shape
@@ -155,8 +201,6 @@ def process_reward_hidden_states(hidden_states_ls,mask,input_ids,token_id=79075)
             start_idx = start_idx - 10 if (start_idx-10)>=0 else 0
             answer_hidden[i,:,0:(end_idx-start_idx),:]=hidden_states[:,start_idx:end_idx]
             answer_mask[i,0:(end_idx-start_idx)]=1
-            # except:
-            #     import pdb;pdb.set_trace()
     return answer_hidden,answer_mask
 class DataParallelPPOActor(BasePPOActor):
     def __init__(self, config, actor_module: nn.Module, actor_optimizer: torch.optim.Optimizer = None):
@@ -320,7 +364,6 @@ class DataParallelPPOActor(BasePPOActor):
                 # Extract hidden states if requested
                 if output_hidden_states and hasattr(output, 'hidden_states'):
                     if layer_list is not None and len(layer_list) > 0:
-                        # 如果指定了layer_list，使用layer_list[0]对应的层
                         target_layer = layer_list
                         for target in layer_list:
                             hidden_states_ls.append(output.hidden_states[target].squeeze(0))
@@ -1048,10 +1091,10 @@ class DataParallelPPOActor(BasePPOActor):
         elif scheduler_type=="constant":
             return loss_weight
         elif scheduler_type=="stage":
-            if step < 10:
-                return 0.005
-            elif step < 30:
-                return 0.001
+            if step < 200:
+                return 0.0007
+            # elif step < 30:
+                # return 0.001
             else:
                 return 0
         else:
@@ -1080,6 +1123,8 @@ class DataParallelPPOActor(BasePPOActor):
             total_steps = data.meta_info["total_steps"]
             select_keys+=['golden_answer_ids','golden_answer_position_ids','golden_answer_attention_mask']
             golden_loss_weight = self.golden_loss_weight_schedule(step,self.golden_loss_weight,total_steps,scheduler_type=self.config.get("golden_loss_scheduler_type","constant"))
+            if self.config.dynamic_layer_type:
+                self.layer_list=dynamic_layer(self.config.dynamic_layer_type,step)
         if self.config.golden_from=="ref":
             select_keys.append("golden_ref_hidden_states")
             select_keys.append("ref_golden_answer_mask")
@@ -1206,6 +1251,7 @@ class DataParallelPPOActor(BasePPOActor):
                         policy_loss = policy_loss + hidden_golden_loss * golden_loss_weight
                         metrics["actor/hidden_golden_loss"] = hidden_golden_loss.detach().item()
                         metrics["actor/hidden_golden_weight"] = golden_loss_weight
+                        metrics["actor/representation_layer"] = self.layer_list[0]
                     if self.config.use_kl_loss:
                         pass
                         # ref_log_prob = model_inputs["ref_log_prob"]
