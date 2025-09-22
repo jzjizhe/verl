@@ -19,6 +19,7 @@ Single Process Actor
 
 import logging
 import os
+import random
 
 import torch
 from torch import nn
@@ -38,6 +39,7 @@ from verl.utils.regular_loss import compute_golden_loss, process_hidden
 from verl.utils.custom_print import rank_zero_print
 # from verl.verl.utils import device
 from verl.workers.actor import BasePPOActor
+import random
 import math
 if is_cuda_available:
     from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
@@ -131,53 +133,68 @@ def get_token_hidden_states(hidden_states_ls,align_type,mask,input_ids,token_id=
     hidden_states_ls = [hidden_states[batch_indices, token_indices] for hidden_states in hidden_states_ls]
     hidden_states_ls = torch.stack(hidden_states_ls,dim=0).transpose(0,1)
     return hidden_states_ls,mask
-
-def dynamic_layer(dynamic_layer_type,step):
-    step-=1 # 0-indexed
-    if dynamic_layer_type=="type1":
-        if step<100:
-            return [29]
-        elif 100<=step<200:
-            return [19]
-        else:
-            return [9]
-    elif dynamic_layer_type=="type2":
-        if step<50:
-            return [34]
-        elif 50<=step<100:
-            return [29]
-        elif 100<=step<150:
-            return [24]
-        elif 150<=step<200:
-            return [19]
-        elif 200<=step<250:
-            return [14]
-        elif 250<=step<300:
-            return [9]
-        else:
-            return [9]
-    elif dynamic_layer_type=="type3":
-        if step<50:
-            return [9]
-        elif 50<=step<100:
-            return [14]
-        elif 100<=step<150:
-            return [19]
-        elif 150<=step<200:
-            return [24]
-        elif 200<=step<250:
-            return [29]
-        elif 250<=step<300:
-            return [34]
-        else:
-            return [34]
-    elif dynamic_layer_type=="type4":
-        if step<100:
-            return [9]
-        elif 100<=step<200:
-            return [19]
-        else:
-            return [29]
+def dynamic_layer(dynamic_layer_type, step):
+    # step is 1-indexed
+    config = {
+        "type1": [(100, 30), (200, 20), (float("inf"), 10)],
+        "type2": [(50, 35), (100, 30), (150, 25), (200, 20), (250, 15), (300, 10), (float("inf"), 10)],
+        "type3": [(50, 10), (100, 15), (150, 20), (200, 25), (250, 30), (300, 35), (float("inf"), 35)],
+        "type4": [(100, 10), (200, 20), (float("inf"), 30)],
+        "1.5Btype1": [(100, 10), (200, 20), (float("inf"), -1)],
+        "1.5Btype2": [(100, -1), (200, 20), (float("inf"), 10)],
+    }
+    if dynamic_layer_type=="random":
+        return [random.randint(1, 36)]
+    else:
+        for threshold, value in config[dynamic_layer_type]:
+            if step < threshold:
+                return [value]
+# def dynamic_layer(dynamic_layer_type,step):
+#     step-=1 # 0-indexed
+#     if dynamic_layer_type=="type1":
+#         if step<100:
+#             return [29]
+#         elif 100<=step<200:
+#             return [19]
+#         else:
+#             return [9]
+#     elif dynamic_layer_type=="type2":
+#         if step<50:
+#             return [34]
+#         elif 50<=step<100:
+#             return [29]
+#         elif 100<=step<150:
+#             return [24]
+#         elif 150<=step<200:
+#             return [19]
+#         elif 200<=step<250:
+#             return [14]
+#         elif 250<=step<300:
+#             return [9]
+#         else:
+#             return [9]
+#     elif dynamic_layer_type=="type3":
+#         if step<50:
+#             return [9]
+#         elif 50<=step<100:
+#             return [14]
+#         elif 100<=step<150:
+#             return [19]
+#         elif 150<=step<200:
+#             return [24]
+#         elif 200<=step<250:
+#             return [29]
+#         elif 250<=step<300:
+#             return [34]
+#         else:
+#             return [34]
+#     elif dynamic_layer_type=="type4":
+#         if step<100:
+#             return [9]
+#         elif 100<=step<200:
+#             return [19]
+#         else:
+#             return [29]
 def process_reward_hidden_states(hidden_states_ls,mask,input_ids,token_id=79075):
     # new_mask=torch.zeros_like(mask)
     b,l,s,h=hidden_states_ls.shape
